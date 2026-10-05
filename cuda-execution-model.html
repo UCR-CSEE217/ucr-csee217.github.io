@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a CUDA kernel runs on the GPU</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F5;--panel:#FFFFFF;--ink:#17212E;--muted:#5D6B7C;--line:#CDD5DF;--soft:#E3E8EF;
+  --hatch:#9AA6B5;--hl:#FFF1BF;--hlbar:#C98A00;--btn:#FFFFFF;--btnh:#E6EBF2;--accent:#2F6FD6;
+  --sk:#3557C4;--sn:#A3500A;--sb:#0E7F70;--sc:#7A8696;--sl:#B02A6B;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161E;--panel:#18212C;--ink:#E6ECF3;--muted:#9AA8B8;--line:#2E3A49;--soft:#243040;
+    --hatch:#5D6B7C;--hl:rgba(255,205,80,.15);--hlbar:#E0A92A;--btn:#1E2935;--btnh:#2A3747;--accent:#6A9CF0;
+    --sk:#8FA9FF;--sn:#F0A060;--sb:#4FD1BC;--sc:#7D8B9C;--sl:#F07AB0;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161E;--panel:#18212C;--ink:#E6ECF3;--muted:#9AA8B8;--line:#2E3A49;--soft:#243040;
+  --hatch:#5D6B7C;--hl:rgba(255,205,80,.15);--hlbar:#E0A92A;--btn:#1E2935;--btnh:#2A3747;--accent:#6A9CF0;
+  --sk:#8FA9FF;--sn:#F0A060;--sb:#4FD1BC;--sc:#7D8B9C;--sl:#F07AB0;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:18px;line-height:1.45;display:flex;flex-direction:column;
+}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+p code{font-size:.92em;background:var(--soft);padding:.05em .3em;border-radius:4px}
+
+header.top{display:flex;align-items:center;gap:20px;padding:14px 24px 10px;flex-wrap:wrap}
+h1{font-size:22px;font-weight:600;margin:0;letter-spacing:-.01em}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.tab{
+  font:inherit;font-size:15px;border:1px solid var(--line);background:var(--btn);color:var(--ink);
+  border-radius:999px;padding:5px 14px 5px 6px;cursor:pointer;display:inline-flex;gap:8px;align-items:center;
+}
+.tab:hover{background:var(--btnh)}
+.tab .n{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--soft);font-weight:600;font-size:13px}
+.tab[aria-current="step"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tab[aria-current="step"] .n{background:var(--bg);color:var(--ink)}
+
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(340px,35fr) 65fr;gap:20px;padding:4px 24px 10px}
+.codecol{display:flex;flex-direction:column;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.codehead{padding:10px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--muted)}
+pre#code{
+  margin:0;padding:12px 0;overflow:auto;flex:1;
+  font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  font-size:clamp(13px,.92vw,18px);line-height:1.65;counter-reset:ln;
+}
+.ln{display:block;white-space:pre;padding-right:16px;border-left:4px solid transparent;transition:background-color .2s}
+.ln::before{counter-increment:ln;content:counter(ln);display:inline-block;width:2.4em;padding-right:.9em;text-align:right;color:var(--muted);opacity:.55}
+.ln.on{background:var(--hl);border-left-color:var(--hlbar)}
+.sk{color:var(--sk);font-weight:500}.sn{color:var(--sn)}.sb{color:var(--sb)}.sc{color:var(--sc);font-style:italic}.sl{color:var(--sl);font-weight:600}
+#chips{border-top:1px solid var(--line);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+#chips[hidden]{display:none}
+#chips .lbl{font-size:14px;color:var(--muted)}
+#chips .row{display:flex;gap:8px;flex-wrap:wrap}
+
+.stagecol{display:flex;flex-direction:column;min-height:0;min-width:0}
+#stage{flex:1 1 auto;min-height:0;width:100%;display:block;font-family:"IBM Plex Sans",system-ui,sans-serif}
+#stage .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+.caption{padding:6px 4px 0;min-height:7.2em}
+.caption h2{font-size:clamp(19px,1.25vw,23px);font-weight:600;margin:0 0 4px}
+.caption p{font-size:clamp(17px,1.12vw,21px);margin:0;max-width:72ch}
+
+footer.controls{display:flex;align-items:center;gap:10px;padding:10px 24px 14px;flex-wrap:wrap;border-top:1px solid var(--line)}
+.btn{
+  font:inherit;font-size:16px;border:1px solid var(--line);background:var(--btn);color:var(--ink);
+  border-radius:8px;padding:8px 16px;cursor:pointer;min-width:44px;
+}
+.btn:hover{background:var(--btnh)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);min-width:110px}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.mono{font-size:14px;padding:6px 10px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:inherit;font-size:14px;border:0;background:var(--btn);color:var(--ink);padding:8px 12px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.where{font-size:15px;color:var(--muted);min-width:11em}
+.hint{color:var(--muted);font-size:14px;margin-left:auto}
+.hint kbd{font-family:"IBM Plex Mono",monospace;font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 5px;background:var(--panel)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+.t-ink{fill:var(--ink)}.t-muted{fill:var(--muted)}
+.f-panel{fill:var(--panel)}.f-soft{fill:var(--soft)}.f-none{fill:none}.f-muted{fill:var(--muted)}.f-hatch{fill:url(#hatch)}
+.s-line{stroke:var(--line)}.s-muted{stroke:var(--muted)}.s-ink{stroke:var(--ink)}.s-hatch{stroke:var(--hatch)}
+
+@media (max-width:1440px){
+  .hint{display:none}
+  main{grid-template-columns:minmax(300px,30fr) 70fr}
+  header.top{gap:12px;padding:10px 20px 6px}
+  h1{font-size:19px}
+  .tab{font-size:14px;padding:4px 12px 4px 5px}
+}
+@media (max-height:800px){
+  .caption{min-height:6.2em}
+  .caption p{font-size:17px}
+  footer.controls{padding:8px 20px 10px}
+  .btn{padding:6px 14px}
+}
+@media (max-width:900px){
+  body{height:auto}
+  main{grid-template-columns:1fr}
+  .codecol{max-height:45vh}
+  #stage{flex:none;height:auto;aspect-ratio:1000/620}
+  .hint{display:none}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>How a CUDA kernel runs on the GPU</h1>
+  <nav class="tabs" id="tabs" aria-label="Steps"></nav>
+</header>
+<main>
+  <section class="codecol" aria-label="Example code">
+    <div class="codehead mono" id="fname">scale.cu</div>
+    <pre id="code"></pre>
+    <div id="chips" hidden>
+      <span class="lbl">Branch condition</span>
+      <div class="row">
+        <button class="btn mono" data-c="mod2">threadIdx.x % 2 == 0</button>
+        <button class="btn mono" data-c="lt8">threadIdx.x &lt; 8</button>
+      </div>
+    </div>
+  </section>
+  <section class="stagecol">
+    <svg id="stage" viewBox="0 0 1000 620" role="img" aria-labelledby="ctitle"></svg>
+    <div class="caption" aria-live="polite">
+      <h2 id="ctitle"></h2>
+      <p id="ctext"></p>
+    </div>
+  </section>
+</main>
+<footer class="controls">
+  <button class="btn" id="bPrev" aria-label="Back">Back</button>
+  <button class="btn primary" id="bPlay">Play</button>
+  <button class="btn" id="bNext">Next</button>
+  <button class="btn" id="bReplay">Replay step</button>
+  <div class="seg" id="speed" aria-label="Speed">
+    <button data-s="0.5">0.5×</button><button data-s="1" aria-pressed="true">1×</button><button data-s="2">2×</button>
+  </div>
+  <span class="where" id="where"></span>
+  <span class="hint"><kbd>→</kbd> next <kbd>←</kbd> back <kbd>Space</kbd> play <kbd>R</kbd> replay <kbd>F</kbd> full screen</span>
+  <button class="btn" id="bFs">Full screen</button>
+</footer>
+
+<script>
+(() => {
+const CYCLE = 900;
+const BLOCK = ['#2F6FD6','#0F9D8A','#C98A00','#C2337A','#4F9A2A','#8A4FD8'];
+const WARP = ['#2F6FD6','#8A4FD8'];
+const PATHC = {A:'#0F9D8A', B:'#C98A00'};
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=u=>u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+const prog=(t,a,b)=>clamp((t-a)/(b-a));
+const lerp=(a,b,u)=>a+(b-a)*u;
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function mix(a,b,u){
+  const pa=[1,3,5].map(i=>parseInt(a.substr(i,2),16)), pb=[1,3,5].map(i=>parseInt(b.substr(i,2),16));
+  return '#'+pa.map((v,i)=>Math.round(v+(pb[i]-v)*u).toString(16).padStart(2,'0')).join('');
+}
+
+// ---------- SVG helpers ----------
+function T(x,y,s,o={}){
+  return `<text x="${x}" y="${y}" font-size="${o.size||14}"${o.weight?` font-weight="${o.weight}"`:''} text-anchor="${o.anchor||'start'}" class="${o.cls||'t-ink'}${o.mono?' mono':''}"${o.op!=null?` opacity="${o.op}"`:''}${o.fill?` style="fill:${o.fill}"`:''}>${esc(s)}</text>`;
+}
+function R(x,y,w,h,o={}){
+  return `<rect x="${x}" y="${y}" width="${Math.max(0,w)}" height="${h}"${o.r?` rx="${o.r}"`:''}${o.cls?` class="${o.cls}"`:''}${o.style?` style="${o.style}"`:''}${o.sw?` stroke-width="${o.sw}"`:''}${o.dash?` stroke-dasharray="${o.dash}"`:''}${o.op!=null?` opacity="${o.op}"`:''}/>`;
+}
+function L(x1,y1,x2,y2,o={}){
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${o.cls||'s-muted'}" stroke-width="${o.sw||1.5}"${o.arrow?' marker-end="url(#arr)"':''}${o.dash?` stroke-dasharray="${o.dash}"`:''}${o.op!=null?` opacity="${o.op}"`:''}/>`;
+}
+function cell(x,y,w,h,st,col,op=1,r=2){
+  if(st==='on') return R(x,y,w,h,{r,style:`fill:${col}`,op});
+  if(st==='off') return R(x,y,w,h,{r,cls:'f-hatch s-hatch',sw:.8,op});
+  return R(x,y,w,h,{r,cls:'f-soft',op});
+}
+function tag(x,y,p){
+  return R(x,y,20,17,{r:4,style:`fill:${PATHC[p]}`})+T(x+10,y+13,p,{size:12,weight:600,anchor:'middle',fill:'#fff'});
+}
+const DEFS=`<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" class="f-soft"/><line x1="0" y1="0" x2="0" y2="6" class="s-hatch" stroke-width="2.4"/></pattern>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="f-muted"/></marker>
+</defs>`;
+
+// A thread block: 300 x 60 at scale 1, 64 threads drawn as 2 rows of 32
+function drawBlock(b,x,y,s,o={}){
+  const col=BLOCK[b];
+  let g=`<g transform="translate(${x},${y}) scale(${s})"${o.op!=null?` opacity="${o.op}"`:''}>`;
+  g+=R(0,0,300,60,{r:6,cls:'f-panel',style:`stroke:${col}`,sw:o.bold?3.5:2});
+  g+=T(8,19,`Block ${b}`,{size:14,weight:600,fill:col});
+  g+=T(292,19,'64 threads',{size:12,cls:'t-muted',anchor:'end'});
+  const op=o.cellOp??.85;
+  for(let t=0;t<64;t++){const c=t%32,r=t>>5; g+=R(6+c*9,30+r*12,8,8,{r:1.5,style:`fill:${col}`,op});}
+  return g+'</g>';
+}
+const gp=b=>[35+(b%3)*315, 190+Math.floor(b/3)*90];
+const cellCenter=(tid,x,y)=>[x+6+(tid%32)*9+4, y+30+(tid>>5)*12+4];
+
+// ---------- Code ----------
+const SRC_A=`__global__ void scale(float *x, int n)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n)
+    x[i] = 2.0f * x[i];
+}
+
+// host: 6 blocks of 64 threads, n = 384
+scale<<<6, 64>>>(d_x, n);`;
+const SRC_B=`__global__ void wave(float *x)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  float v = x[i];
+  if (COND) {
+    v = sinf(v) * 2.0f;    // path A
+  } else {
+    v = cosf(v) + 1.0f;    // path B
+  }
+  x[i] = v;
+}
+
+// host: same launch shape
+wave<<<6, 64>>>(d_x);`;
+const COND={
+  mod2:{code:'threadIdx.x % 2 == 0', f:t=>t%2===0},
+  lt8:{code:'threadIdx.x < 8', f:t=>t<8},
+  warp:{code:'(threadIdx.x / 32) % 2 == 0', f:t=>Math.floor(t/32)%2===0},
+};
+function hl(line){
+  let code=line,com='';
+  const ci=line.indexOf('//'); if(ci>=0){code=line.slice(0,ci);com=line.slice(ci);}
+  const re=/(__global__|\b(?:void|float|int|if|else)\b)|(<<<|>>>)|(\b\d+(?:\.\d+)?f?\b)|(\b(?:blockIdx|blockDim|threadIdx)\b)/g;
+  let out='',last=0,m;
+  while((m=re.exec(code))){
+    out+=esc(code.slice(last,m.index));
+    const c=m[1]?'sk':m[2]?'sl':m[3]?'sn':'sb';
+    out+=`<span class="${c}">${esc(m[0])}</span>`; last=re.lastIndex;
+  }
+  out+=esc(code.slice(last));
+  if(com) out+=`<span class="sc">${esc(com)}</span>`;
+  return out;
+}
+
+// ---------- Warp instruction schedules ----------
+const OPS_SCALE=[
+  {s:'IMAD',d:'compute i',line:2},{s:'ISETP',d:'test i < n',line:3},
+  {s:'LDG',d:'load x[i]',line:4},{s:'FMUL',d:'2.0f * x[i]',line:4},{s:'STG',d:'store x[i]',line:4}];
+const PRE=[{s:'IMAD',d:'compute i',line:2},{s:'LDG',d:'load x[i]',line:3},{s:'ISETP',d:'test condition',line:4}];
+const PA=[{s:'SIN',d:'sinf(v)',line:5},{s:'FMUL',d:'v * 2.0f',line:5}];
+const PB=[{s:'COS',d:'cosf(v)',line:7},{s:'FADD',d:'v + 1.0f',line:7}];
+const POST=[{s:'STG',d:'store v to x[i]',line:9}];
+function sched(kind,cond){
+  const per=[[],[]], full=Array(32).fill(true);
+  for(let w=0;w<2;w++){
+    if(kind==='scale'){for(const o of OPS_SCALE) per[w].push({...o,warp:w,mask:full});continue;}
+    const a=[...Array(32)].map((_,l)=>COND[cond].f(w*32+l)), b=a.map(v=>!v);
+    for(const o of PRE) per[w].push({...o,warp:w,mask:full});
+    if(a.some(Boolean)) for(const o of PA) per[w].push({...o,warp:w,mask:a,path:'A'});
+    if(b.some(Boolean)) for(const o of PB) per[w].push({...o,warp:w,mask:b,path:'B'});
+    for(const o of POST) per[w].push({...o,warp:w,mask:full});
+  }
+  const rows=[], n=Math.max(per[0].length,per[1].length);
+  for(let i=0;i<n;i++) for(let w=0;w<2;w++) if(per[w][i]) rows.push(per[w][i]);
+  return rows;
+}
+const ROWS_SCALE=sched('scale');
+const cache={};
+function rowsFor(mode){
+  const key=mode==='div'?'div-'+S.cond6:mode;
+  if(!cache[key]) cache[key]= mode==='scale'?ROWS_SCALE : mode==='div'?sched('wave',S.cond6) : sched('wave','warp');
+  return cache[key];
+}
+function stats(rows,cnt){let a=0;for(let j=0;j<cnt;j++)a+=rows[j].mask.filter(Boolean).length;return{slots:cnt,active:a,util:cnt?a/(32*cnt):0};}
+const pct=st=>Math.round(st.util*100);
+function dpInfo(t,n){
+  if(t>=n*CYCLE) return {k:n,p:1,done:true,shown:n-1};
+  const k=Math.floor(t/CYCLE),p=(t-k*CYCLE)/CYCLE;
+  return {k,p,done:false,shown:p>=.35?k:k-1};
+}
+const isIssued=(j,I)=>I.done||j<I.k||(j===I.k&&I.p>=.35);
+
+// ---------- Step 1: launch ----------
+function r1(t){
+  let s='';
+  s+=T(500,22,'Kernel launch in host code',{size:14,cls:'t-muted',anchor:'middle'});
+  s+=R(290,32,420,58,{r:8,cls:'f-panel s-ink',sw:1.5});
+  s+=T(500,70,'scale<<<6, 64>>>(d_x, n)',{size:24,mono:1,anchor:'middle',weight:500});
+  const u0=ease(prog(t,0,450));
+  if(u0>0.02) s+=L(500,92,500,92+56*u0,{arrow:1,sw:2});
+  s+=R(20,152,960,212,{r:10,cls:'f-none s-muted',sw:1.5,dash:'6 5',op:u0});
+  s+=T(36,176,'Grid: gridDim.x = 6 blocks',{size:15,weight:600,op:u0});
+  for(let b=0;b<6;b++){
+    const d=500+b*110,u=ease(prog(t,d,d+380)); if(u<=0) continue;
+    const [x,y]=gp(b); s+=drawBlock(b,x,y-16*(1-u),1,{op:u});
+  }
+  const u2=ease(prog(t,1550,2050));
+  if(u2>0){
+    s+=T(500,420,'gridDim.x × blockDim.x = 6 × 64',{size:22,mono:1,anchor:'middle',op:u2});
+    s+=T(500,470,'= 384 threads',{size:34,weight:600,anchor:'middle',op:u2});
+    s+=`<g opacity="${u2}">`+R(282,524,10,10,{r:2,style:`fill:${BLOCK[0]}`})
+      +T(300,534,'= one thread. Every thread runs scale() on one element of x.',{size:16,cls:'t-muted'})+'</g>';
+  }
+  return s;
+}
+function c1(t){
+  if(t<400) return 'The host (CPU) launches <code>scale</code> with an execution configuration: <code>&lt;&lt;&lt;blocks, threads per block&gt;&gt;&gt;</code>.';
+  if(t<1600) return 'The launch creates a grid of 6 thread blocks. Each block holds 64 threads, drawn here as small squares.';
+  return 'That is 384 threads, all running the same function. Each one handles a different element of <code>x</code>.';
+}
+
+// ---------- Step 2: thread index ----------
+const EX=[{b:0,t:5},{b:2,t:37},{b:5,t:63}];
+function r2(t){
+  let s='';
+  const k=clamp(Math.ceil(t/900)-1,0,2), u=ease(prog(t,k*900,k*900+600)), ex=EX[k];
+  s+=R(20,152,960,212,{r:10,cls:'f-none s-muted',sw:1.5,dash:'6 5'});
+  s+=T(36,176,'Grid: gridDim.x = 6 blocks',{size:15,weight:600});
+  const dim=k>0?.3:lerp(.85,.3,u);
+  for(let b=0;b<6;b++){const [x,y]=gp(b); s+=drawBlock(b,x,y,1,{cellOp:dim,bold:b===ex.b&&u>0});}
+  for(let j=0;j<k;j++){
+    const e=EX[j],[x,y]=gp(e.b),[cx,cy]=cellCenter(e.t,x,y);
+    s+=R(cx-4,cy-4,8,8,{r:1.5,style:`fill:${BLOCK[e.b]}`});
+    s+=`<circle cx="${cx}" cy="${cy}" r="7" class="f-none s-muted" stroke-width="1.5"/>`;
+  }
+  if(u>0){
+    const [x,y]=gp(ex.b),[cx,cy]=cellCenter(ex.t,x,y),col=BLOCK[ex.b],i=ex.b*64+ex.t;
+    s+=R(cx-4,cy-4,8,8,{r:1.5,style:`fill:${col}`});
+    s+=`<circle cx="${cx}" cy="${cy}" r="${lerp(18,8,u)}" class="f-none s-ink" stroke-width="2.5" opacity="${u}"/>`;
+    s+=L(cx,cy+9,clamp(cx,140,860),400,{cls:'s-ink',sw:1.5,dash:'4 4',op:u});
+    s+=R(100,400,800,196,{r:12,cls:'f-panel s-line',sw:1.5,op:u});
+    s+=`<g opacity="${u}">`;
+    s+=T(130,436,`Block ${ex.b}, thread ${ex.t}`,{size:19,weight:600,fill:col});
+    s+=T(130,482,'i = blockIdx.x × blockDim.x + threadIdx.x',{size:21,mono:1});
+    s+=T(156,524,`= ${ex.b} × 64 + ${ex.t}`,{size:21,mono:1});
+    s+=T(156,574,`= ${i}`,{size:30,mono:1,weight:600});
+    if(k>0){
+      s+=T(876,522,'Earlier',{size:14,cls:'t-muted',anchor:'end'});
+      for(let j=0;j<k;j++){const e=EX[j]; s+=T(876,548+j*24,`block ${e.b}, thread ${e.t}: i = ${e.b*64+e.t}`,{size:15,cls:'t-muted',anchor:'end'});}
+    }
+    s+='</g>';
+  }
+  return s;
+}
+function c2(){
+  return 'All threads run the same code, so each computes a unique global index from built-in variables: <code>blockIdx.x</code> (which block), <code>blockDim.x</code> (threads per block) and <code>threadIdx.x</code> (position inside the block). Thread <code>i</code> then works on <code>x[i]</code>.';
+}
+
+// ---------- Step 3: blocks to SMs ----------
+const SCH=[{b:0,sm:0,st:0,fin:3200},{b:1,sm:1,st:150,fin:2700},{b:2,sm:2,st:300,fin:3600},
+           {b:3,sm:1,st:2700,fin:5000},{b:4,sm:0,st:3200,fin:5400},{b:5,sm:2,st:3600,fin:5200}];
+const FLY=700,FADE=400;
+function smInternals(sx){
+  let s='';
+  s+=R(sx+15,340,270,36,{r:6,cls:'f-soft'})+T(sx+150,363,'Warp scheduler',{size:13,cls:'t-muted',anchor:'middle'});
+  s+=R(sx+15,386,270,64,{r:6,cls:'f-soft'})+T(sx+150,406,'32 lanes',{size:13,cls:'t-muted',anchor:'middle'});
+  for(let l=0;l<32;l++) s+=R(sx+23+l*8,416,6,24,{r:1,cls:'f-panel'});
+  s+=R(sx+15,460,270,54,{r:6,cls:'f-soft'})+T(sx+150,492,'Register file',{size:13,cls:'t-muted',anchor:'middle'});
+  s+=R(sx+15,524,270,54,{r:6,cls:'f-soft'})+T(sx+150,556,'Shared memory / L1',{size:13,cls:'t-muted',anchor:'middle'});
+  return s;
+}
+function r3(t){
+  let s='';
+  s+=T(30,30,'Grid: blocks waiting to run',{size:14,cls:'t-muted'});
+  s+=R(400,88,200,32,{r:16,cls:'f-soft'})+T(500,109,'Block scheduler',{size:14,anchor:'middle',weight:500});
+  s+=R(15,150,970,456,{r:14,cls:'f-none s-ink',sw:1.5});
+  s+=T(32,176,'GPU',{size:16,weight:600});
+  for(let m=0;m<3;m++){
+    const sx=30+m*320;
+    s+=R(sx,190,300,400,{r:10,cls:'f-panel s-line',sw:1.5});
+    const occ=SCH.find(e=>e.sm===m&&t>=e.st+FLY&&t<e.fin+FADE);
+    const inc=SCH.find(e=>e.sm===m&&t>=e.st&&t<e.st+FLY);
+    s+=T(sx+15,222,`SM ${m}`,{size:17,weight:600});
+    const status=occ?(t<occ.fin?`running block ${occ.b}`:`block ${occ.b} finished`):inc?`receiving block ${inc.b}`:'idle';
+    s+=T(sx+285,222,status,{size:13,cls:'t-muted',anchor:'end'});
+    if(!occ) s+=R(sx+15,236,270,54,{r:6,cls:'f-none s-line',dash:'5 4',sw:1.2});
+    s+=R(sx+15,302,270,8,{r:4,cls:'f-soft'});
+    if(occ){
+      const pr=prog(t,occ.st+FLY,occ.fin);
+      s+=R(sx+15,302,270*pr,8,{r:4,style:`fill:${BLOCK[occ.b]}`,op:t<occ.fin?1:1-prog(t,occ.fin,occ.fin+FADE)});
+    }
+    s+=smInternals(sx);
+  }
+  for(const e of SCH){
+    const qx=30+e.b*158,qy=42;
+    if(t>=e.st){
+      s+=R(qx,qy,144,29,{r:4,cls:'f-none s-line',dash:'4 3'});
+      if(t>=e.fin+FADE) s+=T(qx+72,qy+19,'done',{size:12,cls:'t-muted',anchor:'middle'});
+    }
+  }
+  for(const e of SCH){
+    const qx=30+e.b*158,qy=42,sx=30+e.sm*320+15,sy=236;
+    if(t<e.st) s+=drawBlock(e.b,qx,qy,.48);
+    else if(t<e.st+FLY){const u=ease(prog(t,e.st,e.st+FLY)); s+=drawBlock(e.b,lerp(qx,sx,u),lerp(qy,sy,u),lerp(.48,.9,u));}
+    else if(t<e.fin) s+=drawBlock(e.b,sx,sy,.9);
+    else if(t<e.fin+FADE) s+=drawBlock(e.b,sx,sy,.9,{op:1-prog(t,e.fin,e.fin+FADE)});
+  }
+  return s;
+}
+function c3(t){
+  if(t<1200) return 'The GPU’s block scheduler hands thread blocks to streaming multiprocessors (SMs). A block runs entirely on one SM, start to finish.';
+  if(t<2700) return 'This GPU has only 3 SMs, so blocks 3, 4 and 5 wait until an SM frees up.';
+  if(t<5800) return 'When a block finishes, its SM takes the next waiting block. Blocks finish in no guaranteed order, so they must not depend on each other.';
+  return 'All 6 blocks are done. For clarity each SM holds one block here; real SMs run several blocks at once, limited by threads, registers and shared memory.';
+}
+
+// ---------- Step 4: warps ----------
+function r4(t){
+  let s='';
+  const u=ease(prog(t,300,1300)),u2=ease(prog(t,1500,2100));
+  s+=R(20,20,960,580,{r:14,cls:'f-panel s-line',sw:1.5});
+  s+=T(40,52,'SM 0, zoomed in',{size:18,weight:600});
+  s+=T(960,52,'running block 0',{size:14,cls:'t-muted',anchor:'end'});
+  if(u<1){
+    s+=R(70,72,860,104,{r:8,cls:'f-none',style:`stroke:${BLOCK[0]}`,sw:2,op:1-u});
+    s+=T(84,96,'Block 0: 64 threads',{size:15,weight:600,fill:BLOCK[0],op:1-u});
+  }
+  for(let r=0;r<2;r++){
+    const ry=r===0?lerp(108,140,u):lerp(134,262,u), col=mix(BLOCK[0],WARP[r],u);
+    if(u>0){
+      s+=R(74,ry-34,852,68,{r:8,cls:'f-none',style:`stroke:${WARP[r]}`,sw:2,op:u});
+      s+=T(88,ry-12,`Warp ${r}: threads ${r*32}–${r*32+31}`,{size:15,weight:600,fill:WARP[r],op:u});
+      s+=T(912,ry-12,'scheduled and executed together',{size:13,cls:'t-muted',anchor:'end',op:u});
+    }
+    for(let l=0;l<32;l++){
+      const x=84+l*26;
+      s+=R(x,ry,24,24,{r:3,style:`fill:${col}`});
+      s+=T(x+12,ry+16,String(r*32+l),{size:10,anchor:'middle',fill:'#fff',weight:500});
+    }
+  }
+  if(u2>0){
+    s+=`<g opacity="${u2}">`;
+    s+=L(40,330,960,330,{cls:'s-line',sw:1});
+    s+=T(70,372,'Same SM with blockDim.x = 48',{size:18,weight:600});
+    for(let r=0;r<2;r++){
+      const y=392+r*42;
+      s+=T(70,y+14,`Warp ${r}`,{size:15,weight:600,fill:WARP[r]});
+      for(let l=0;l<32;l++) s+=cell(200+l*20,y,18,18,(r*32+l)<48?'on':'off',WARP[r]);
+    }
+    s+=L(520,462,838,462,{sw:1.5})+L(520,456,520,468,{sw:1.5})+L(838,456,838,468,{sw:1.5});
+    s+=T(679,486,'16 lanes with no thread: idle for the whole kernel',{size:14,cls:'t-muted',anchor:'middle'});
+    s+='</g>';
+  }
+  return s;
+}
+function c4(t){
+  if(t<300) return 'Zoom into SM 0, which is running block 0. Its 64 threads are about to be grouped for execution.';
+  if(t<1500) return 'The SM groups a block’s threads into warps of 32 consecutive threads. Block 0 becomes 2 warps. A warp is what the SM schedules: its 32 threads execute one instruction together.';
+  return 'If the block size is not a multiple of 32, the last warp is partly empty. With 48 threads per block, warp 1 carries 16 lanes that never do work, so pick block sizes that are multiples of 32.';
+}
+
+// ---------- Steps 5–7: SM datapath ----------
+function renderDP(t,rows,mode){
+  let s='';
+  const n=rows.length, I=dpInfo(t,n), cur=I.shown>=0?rows[I.shown]:null;
+
+  // warp cards
+  for(let w=0;w<2;w++){
+    const y=30+w*95, act=cur&&cur.warp===w&&!I.done;
+    s+=R(20,y,210,85,{r:8,cls:'f-panel'+(act?'':' s-line'),style:act?`stroke:${WARP[w]}`:'',sw:act?2.5:1.2});
+    s+=T(34,y+24,`Warp ${w}`,{size:16,weight:600,fill:WARP[w]});
+    s+=T(216,y+24,`threads ${w*32}–${w*32+31}`,{size:12,cls:'t-muted',anchor:'end'});
+    let nj=-1; for(let j=0;j<n;j++) if(rows[j].warp===w&&!isIssued(j,I)){nj=j;break;}
+    const nr=nj>=0?rows[nj]:null;
+    s+=T(34,y+51,nr?`next: ${nr.s}`:'finished',{size:13,mono:1,cls:nr?'t-ink':'t-muted'});
+    if(nr&&nr.path) s+=tag(34+(6+nr.s.length)*7.9+8,y+38,nr.path);
+    for(let l=0;l<32;l++) s+=cell(34+l*5.7,y+61,4.7,12,nr?(nr.mask[l]?'on':'off'):'empty',WARP[w],1,1);
+  }
+
+  // scheduler + issue box
+  s+=R(260,30,180,60,{r:8,cls:'f-soft'})+T(350,65,'Warp scheduler',{size:15,weight:600,anchor:'middle'});
+  s+=L(440,60,466,60,{arrow:1,sw:2});
+  s+=R(470,30,510,60,{r:8,cls:'f-panel s-line',sw:1.2});
+  if(cur){
+    const on=cur.mask.filter(Boolean).length;
+    s+=T(488,52,I.done?`Last issued by warp ${cur.warp}, to ${on} of 32 lanes`:`Warp ${cur.warp} issues to ${on} of 32 lanes`,{size:13,cls:'t-muted'});
+    s+=T(488,79,cur.s,{size:20,mono:1,weight:600,fill:WARP[cur.warp]});
+    s+=T(488+cur.s.length*12.2+14,79,cur.d,{size:17,mono:1});
+    if(cur.path) s+=tag(950,46,cur.path);
+  } else {
+    s+=T(488,66,'Waiting for the first instruction',{size:15,cls:'t-muted'});
+  }
+
+  // token travelling from the warp to the issue slot
+  if(!I.done&&I.p>=.04&&I.p<.35){
+    const r=rows[I.k],u=ease(prog(I.p,.04,.33));
+    const x=lerp(125,560,u),y=lerp(30+r.warp*95+42,60,u);
+    s+=R(x-46,y-13,92,26,{r:13,style:`fill:${WARP[r.warp]}`})+T(x,y+5,r.s,{size:13,mono:1,weight:600,anchor:'middle',fill:'#fff'});
+  }
+
+  // lanes
+  s+=T(260,128,'32 lanes',{size:14,weight:600});
+  const lit=cur?((!I.done&&I.shown===I.k)?ease(prog(I.p,.35,.47)):1):0;
+  for(let l=0;l<32;l++){
+    const x=340+l*19;
+    s+=cell(x,112,17,40,'empty');
+    if(cur) s+=cell(x,112,17,40,cur.mask[l]?'on':'off',WARP[cur.warp],lit);
+    s+=T(x+8.5,168,String(l),{size:9,cls:'t-muted',anchor:'middle'});
+  }
+
+  // issue history
+  s+=T(260,200,'Issue history: one row per warp instruction',{size:13,cls:'t-muted'});
+  const doneCnt=Math.min(n,I.done?n:I.k+(I.p>=.75?1:0));
+  for(let j=0;j<doneCnt;j++){
+    const r=rows[j],y=214+j*23,op=(!I.done&&j===I.k)?prog(I.p,.75,.95):1;
+    s+=`<g opacity="${op}">`+T(260,y+13,`w${r.warp} ${r.s}`,{size:12,mono:1,fill:WARP[r.warp]});
+    for(let l=0;l<32;l++) s+=cell(340+l*19,y,17,18,r.mask[l]?'on':'off',WARP[r.warp]);
+    if(r.path) s+=tag(958,y,r.path);
+    s+='</g>';
+  }
+
+  // metrics
+  const st=stats(rows,doneCnt);
+  s+=T(20,262,'Lane utilization',{size:14,cls:'t-muted'});
+  s+=T(20,314,st.slots?pct(st)+'%':'–',{size:46,weight:600});
+  s+=R(20,328,210,10,{r:5,cls:'f-soft'});
+  if(st.slots) s+=R(20,328,210*st.util,10,{r:5,style:'fill:var(--ink)'});
+  s+=cell(20,412,16,16,'on',WARP[0])+T(44,425,'lane doing work',{size:13});
+  s+=cell(20,438,16,16,'off')+T(44,451,'lane masked off, idle',{size:13});
+  if(mode!=='scale'){
+    s+=tag(20,464,'A')+T(46,477,'path A',{size:13})+tag(110,464,'B')+T(136,477,'path B',{size:13});
+  }
+  if(mode==='fix'&&I.done){
+    const d=stats(sched('wave','mod2'),16);
+    s+=R(20,496,210,104,{r:8,cls:'f-soft'});
+    s+=T(32,518,'Divergent (% 2 == 0)',{size:13,cls:'t-muted'});
+    s+=T(32,540,`${pct(d)}% utilization`,{size:16,weight:600});
+    s+=T(32,566,'Warp-aligned',{size:13,cls:'t-muted'});
+    s+=T(32,588,`${pct(st)}% utilization`,{size:16,weight:600});
+  }
+  s+=T(980,614,'Instruction names simplified. One warp instruction issues per cycle.',{size:11,cls:'t-muted',anchor:'end'});
+  return s;
+}
+
+function capDP(mode){
+  return t=>{
+    const rows=rowsFor(mode),I=dpInfo(t,rows.length),cur=I.shown>=0?rows[I.shown]:null,all=stats(rows,rows.length);
+    if(mode==='scale'){
+      if(I.done) return 'Every lane did useful work on every instruction: 100% lane utilization. Because n = 384, <code>if (i &lt; n)</code> is true for every thread, so nothing diverges.';
+      if(cur&&(cur.s==='LDG'||cur.s==='FMUL')) return 'A load from global memory takes hundreds of cycles to return. While one warp waits for its data, the scheduler issues from another. Keeping many warps on each SM is how GPUs hide memory latency.';
+      if(cur&&cur.s==='STG') return 'The store writes each thread’s result back to memory.';
+      return 'Back in SM 0. Each cycle the warp scheduler picks a ready warp and issues that warp’s next instruction to all 32 lanes at once. One instruction, 32 threads: that is SIMT.';
+    }
+    if(mode==='div'){
+      const m8=S.cond6==='lt8';
+      if(I.done) return m8
+        ? `${pct(all)}% lane utilization. Warp 0 diverged and paid for both paths, even though only 8 lanes took path A. Warp 1 stayed converged. Divergence happens per warp, not per block.`
+        : `Each warp issued 8 instructions instead of 6, and only ${pct(all)}% of lanes did useful work. Inside the branch it is exactly 50%: with two equal-length paths, that holds however the lanes split.`;
+      if(!cur||cur.s==='IMAD'||cur.s==='LDG') return 'A new kernel with an if/else. The warps start out converged: all 32 lanes run each instruction.';
+      if(cur.s==='ISETP') return m8
+        ? 'Each lane tests <code>threadIdx.x &lt; 8</code>. In warp 0, lanes 0–7 want path A and lanes 8–31 want path B. In warp 1, every lane wants path B.'
+        : 'Each lane tests <code>threadIdx.x % 2 == 0</code>. In both warps, even lanes want path A and odd lanes want path B.';
+      if(cur.path==='A') return m8
+        ? 'Warp 0 runs path A with only 8 of its 32 lanes doing work. The other 24 are masked off and wait.'
+        : 'A warp issues one instruction for all its lanes, so it runs path A first. The odd lanes are masked off (hatched): they occupy the datapath but do no work.';
+      if(cur.path==='B') return m8
+        ? (cur.warp===1 ? 'Warp 1 never diverged: every lane chose path B, so it skips path A and runs path B with all 32 lanes.' : 'Warp 0 then runs path B with lanes 0–7 masked. It pays for both paths in full.')
+        : 'Then the warp runs path B with the even lanes masked. The two paths run one after the other, not side by side.';
+      return 'After the if/else the warp reconverges, and all 32 lanes run the store together again.';
+    }
+    // fix
+    if(I.done){
+      const d=stats(sched('wave','mod2'),16);
+      return `Every lane did useful work: 100% utilization, versus ${pct(d)}% when the branch split every warp. Each warp also needs only 6 instructions instead of 8. This version changes which elements take each path, so in real code it means arranging data or work so that threads in the same warp make the same choice.`;
+    }
+    if(!cur||cur.s==='IMAD'||cur.s==='LDG') return 'Same work, but the condition is <code>(threadIdx.x / 32) % 2 == 0</code>. It depends only on which warp a thread belongs to.';
+    if(cur.s==='ISETP') return 'All 32 lanes of warp 0 get true, and all 32 lanes of warp 1 get false. No warp disagrees with itself.';
+    if(cur.path) return 'Warp 0 runs only path A and warp 1 runs only path B, each with all 32 lanes busy. Different warps taking different paths costs nothing.';
+    return 'Both warps finish with the store.';
+  };
+}
+function dpStep(mode){
+  return {
+    beats:()=>rowsFor(mode).map((_,i)=>(i+1)*CYCLE),
+    lines:t=>{const rows=rowsFor(mode),I=dpInfo(t,rows.length);return I.shown>=0?[rows[I.shown].line]:[];},
+    render:t=>renderDP(t,rowsFor(mode),mode),
+    caption:capDP(mode),
+  };
+}
+
+// ---------- Steps ----------
+const S={step:0,t:0,target:null,playing:false,speed:1,cond6:'mod2'};
+const STEPS=[
+  {tab:'Launch',title:'Launching a kernel creates a grid',code:'A',beats:()=>[1450,2100],lines:()=>[8],render:r1,caption:c1},
+  {tab:'Thread index',title:'Every thread finds its own data',code:'A',beats:()=>[900,1800,2700],lines:()=>[2],render:r2,caption:c2},
+  {tab:'Blocks to SMs',title:'Blocks are scheduled onto SMs',code:'A',beats:()=>[1200,4400,5800],lines:()=>[8],render:r3,caption:c3},
+  {tab:'Warps',title:'An SM splits each block into warps',code:'A',beats:()=>[1400,2600],lines:()=>[8],render:r4,caption:c4},
+  {tab:'Datapath',title:'Warps flow through the SM datapath',code:'A',...dpStep('scale')},
+  {tab:'Divergence',title:'Warp divergence leaves lanes idle',code:'B',...dpStep('div')},
+  {tab:'Warp-aligned',title:'Avoiding divergence with warp-aligned branches',code:'B',...dpStep('fix')},
+];
+
+// ---------- DOM ----------
+const $=id=>document.getElementById(id);
+const stage=$('stage'),codeEl=$('code'),fname=$('fname'),chips=$('chips'),ctitle=$('ctitle'),ctext=$('ctext'),where=$('where');
+const bPrev=$('bPrev'),bPlay=$('bPlay'),bNext=$('bNext'),bReplay=$('bReplay'),bFs=$('bFs');
+const tabsEl=$('tabs');
+STEPS.forEach((st,i)=>{
+  const b=document.createElement('button');
+  b.className='tab'; b.innerHTML=`<span class="n">${i+1}</span>${esc(st.tab)}`;
+  b.onclick=()=>goStep(i);
+  tabsEl.appendChild(b);
+});
+const beats=()=>STEPS[S.step].beats();
+const dur=()=>{const b=beats();return b[b.length-1];};
+
+let codeKey='';
+function renderCode(){
+  const st=STEPS[S.step];
+  const name=st.code==='A'?'scale.cu':'wave.cu';
+  const src=st.code==='A'?SRC_A:SRC_B.replace('COND',COND[S.step===5?S.cond6:'warp'].code);
+  const key=name+src; if(key===codeKey) return; codeKey=key;
+  fname.textContent=name;
+  codeEl.innerHTML=src.split('\n').map((l,i)=>`<span class="ln" data-i="${i}">${hl(l)||' '}</span>`).join('');
+}
+function updateChrome(){
+  [...tabsEl.children].forEach((b,i)=>{if(i===S.step)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+  chips.hidden=S.step!==5;
+  chips.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.c===S.cond6)));
+  bPlay.textContent=S.playing?'Pause':'Play';
+  bNext.disabled=S.step===STEPS.length-1&&S.t>=dur()&&S.target==null;
+  bPrev.disabled=S.step===0&&S.t<=0;
+}
+let lastCap='',dirty=true;
+function render(){
+  const st=STEPS[S.step];
+  stage.innerHTML=DEFS+st.render(S.t);
+  ctitle.textContent=st.title;
+  const c=st.caption(S.t); if(c!==lastCap){ctext.innerHTML=c;lastCap=c;}
+  const on=new Set(st.lines(S.t));
+  codeEl.querySelectorAll('.ln').forEach(el=>el.classList.toggle('on',on.has(+el.dataset.i)));
+  const b=beats(), part=Math.min(b.length,b.filter(x=>x<=S.t+.5).length);
+  where.textContent=`Step ${S.step+1} of ${STEPS.length}, part ${part} of ${b.length}`;
+  updateChrome();
+}
+function goStep(i){
+  S.step=i;S.t=0;S.target=null;S.playing=false;
+  renderCode();dirty=true;
+}
+function next(){
+  if(S.target!=null){S.t=S.target;S.target=null;dirty=true;return;}
+  const nb=beats().find(x=>x>S.t+1);
+  if(nb!=null){S.playing=false; if(reduced) S.t=nb; else S.target=nb;}
+  else if(S.step<STEPS.length-1) goStep(S.step+1);
+  dirty=true;
+}
+function prev(){
+  S.playing=false;S.target=null;
+  const pb=[0,...beats()].reverse().find(x=>x<S.t-1);
+  if(pb!=null) S.t=pb;
+  else if(S.step>0){goStep(S.step-1);S.t=dur();}
+  dirty=true;
+}
+function togglePlay(){
+  if(S.playing){S.playing=false;}
+  else{ if(S.t>=dur()) S.t=0; S.target=null; if(reduced){S.t=dur();} else S.playing=true; }
+  dirty=true;
+}
+function replay(){S.t=0;S.target=null;if(reduced){S.t=dur();}else S.playing=true;dirty=true;}
+
+bNext.onclick=next; bPrev.onclick=prev; bPlay.onclick=togglePlay; bReplay.onclick=replay;
+$('speed').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  S.speed=+b.dataset.s;
+  $('speed').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+});
+chips.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  S.cond6=b.dataset.c;S.t=0;S.target=null;S.playing=false;renderCode();dirty=true;
+});
+function toggleFs(){
+  try{
+    if(document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(()=>{});
+  }catch(e){}
+}
+if(!document.fullscreenEnabled) bFs.hidden=true;
+bFs.onclick=toggleFs;
+document.addEventListener('keydown',e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey) return;
+  const k=e.key;
+  if(k==='ArrowRight'||k==='PageDown'){e.preventDefault();next();}
+  else if(k==='ArrowLeft'||k==='PageUp'){e.preventDefault();prev();}
+  else if(k===' '){e.preventDefault();togglePlay();}
+  else if(k==='r'||k==='R'){replay();}
+  else if(k==='f'||k==='F'){toggleFs();}
+  else if(/^[1-7]$/.test(k)){goStep(+k-1);}
+});
+
+let last=null;
+function frame(ts){
+  if(last==null) last=ts;
+  const dt=Math.min(100,ts-last); last=ts;
+  if(S.playing||S.target!=null){
+    S.t+=dt*S.speed;
+    const end=S.target!=null?S.target:dur();
+    if(S.t>=end){S.t=end;S.target=null;S.playing=false;}
+    dirty=true;
+  }
+  if(dirty){render();dirty=false;}
+  requestAnimationFrame(frame);
+}
+renderCode();
+requestAnimationFrame(frame);
+
+// test hook
+window.__viz={S,goStep,render,dur};
+})();
+</script>
+</body>
+</html>
