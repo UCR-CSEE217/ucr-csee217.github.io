@@ -156,7 +156,8 @@ footer.controls{display:flex;align-items:center;gap:10px;padding:10px 24px 14px;
     <button data-s="0.5">0.5×</button><button data-s="1" aria-pressed="true">1×</button><button data-s="2">2×</button>
   </div>
   <span class="where" id="where"></span>
-  <span class="hint"><kbd>→</kbd> next <kbd>←</kbd> back <kbd>Space</kbd> play <kbd>R</kbd> replay <kbd>F</kbd> full screen</span>
+  <span class="hint"><kbd>→</kbd> next <kbd>←</kbd> back <kbd>Space</kbd> play <kbd>R</kbd> replay <kbd>T</kbd> theme <kbd>F</kbd> full screen</span>
+  <button class="btn" id="bTheme">Dark mode</button>
   <button class="btn" id="bFs">Full screen</button>
 </footer>
 
@@ -690,6 +691,15 @@ function toggleFs(){
   }catch(e){}
 }
 if(!document.fullscreenEnabled) bFs.hidden=true;
+const bTheme=$('bTheme'), darkMQ=matchMedia('(prefers-color-scheme: dark)');
+const isDark=()=>{const a=document.documentElement.dataset.theme;return a?a==='dark':darkMQ.matches;};
+function syncTheme(){bTheme.textContent=isDark()?'Light mode':'Dark mode';}
+function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem('cuda-viz-theme',t);}catch(e){}syncTheme();}
+function toggleTheme(){setTheme(isDark()?'light':'dark');}
+try{const saved=localStorage.getItem('cuda-viz-theme');if(saved==='light'||saved==='dark')document.documentElement.dataset.theme=saved;}catch(e){}
+darkMQ.addEventListener?.('change',syncTheme);
+bTheme.onclick=toggleTheme;
+syncTheme();
 bFs.onclick=toggleFs;
 document.addEventListener('keydown',e=>{
   if(e.metaKey||e.ctrlKey||e.altKey) return;
@@ -699,6 +709,7 @@ document.addEventListener('keydown',e=>{
   else if(k===' '){e.preventDefault();togglePlay();}
   else if(k==='r'||k==='R'){replay();}
   else if(k==='f'||k==='F'){toggleFs();}
+  else if(k==='t'||k==='T'){toggleTheme();}
   else if(/^[1-7]$/.test(k)){goStep(+k-1);}
 });
 
