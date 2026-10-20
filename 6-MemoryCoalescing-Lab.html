@@ -1,0 +1,722 @@
+<title>Memory Coalescing Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: projector-first lab bench. Header with view tabs, one control strip, then a stage of
+   matrix canvases, DRAM request panels and kernel code. M is always blue, N is always orange. */
+:root {
+  --bg: #f3f5f7; --panel: #ffffff; --fg: #121820; --muted: #56616d; --line: #d4dae1; --line-strong: #7f8b98;
+  --cell: #e7ebf0;
+  --m: #1f5fd6; --m-soft: #b6cbf2; --m-faint: #dce6f8;
+  --n: #c2410c; --n-soft: #f2c6ab; --n-faint: #f8e4d7;
+  --good: #15803d; --good-bg: #dbf1e2; --warn: #9a5b00; --warn-bg: #f7ebc6; --bad: #b91c1c; --bad-bg: #f8dcdc;
+  --code-bg: #101820; --code-fg: #dbe3ea; --code-dim: #7f8d9b; --code-hl: #23384f; --code-m: #8db5ff; --code-n: #ffad7a;
+  --focus: #1f5fd6;
+  --font-ui: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1116; --panel: #151b22; --fg: #e7ecf1; --muted: #9aa6b2; --line: #29323c; --line-strong: #64717e;
+    --cell: #1e262f;
+    --m: #78a8ff; --m-soft: #2f4e85; --m-faint: #1d2d4a;
+    --n: #ff9c60; --n-soft: #7a3e1c; --n-faint: #3a2417;
+    --good: #4ade80; --good-bg: #12301e; --warn: #f5c84b; --warn-bg: #362d0f; --bad: #f87171; --bad-bg: #3b1818;
+    --code-bg: #0a0e13; --code-fg: #dbe3ea; --code-dim: #6c7986; --code-hl: #1e3149; --code-m: #8db5ff; --code-n: #ffad7a;
+    --focus: #78a8ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1116; --panel: #151b22; --fg: #e7ecf1; --muted: #9aa6b2; --line: #29323c; --line-strong: #64717e;
+  --cell: #1e262f;
+  --m: #78a8ff; --m-soft: #2f4e85; --m-faint: #1d2d4a;
+  --n: #ff9c60; --n-soft: #7a3e1c; --n-faint: #3a2417;
+  --good: #4ade80; --good-bg: #12301e; --warn: #f5c84b; --warn-bg: #362d0f; --bad: #f87171; --bad-bg: #3b1818;
+  --code-bg: #0a0e13; --code-fg: #dbe3ea; --code-dim: #6c7986; --code-hl: #1e3149; --code-m: #8db5ff; --code-n: #ffad7a;
+  --focus: #78a8ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 16px; line-height: 1.4;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 20px;
+}
+.app { max-width: 1500px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
+h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.units { margin: 2px 0 0; color: var(--muted); font-family: var(--font-code); font-size: 0.82rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.tab { font: inherit; font-weight: 700; font-size: 0.95rem; border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 7px; cursor: pointer; }
+.tab kbd { font-family: var(--font-code); font-size: 0.75rem; opacity: 0.7; margin-right: 6px; }
+.tab[aria-selected="true"] { background: var(--fg); color: var(--bg); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.ctl { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--muted); }
+.ctl label, .ctl .lbl { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.72rem; font-weight: 700; }
+select, input[type="number"], input[type="text"] { font: inherit; font-size: 0.95rem; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+input[type="number"] { width: 5.5em; }
+input[type="range"] { width: 180px; accent-color: var(--fg); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.seg button { font: inherit; font-size: 0.9rem; border: 0; background: var(--panel); color: var(--fg); padding: 6px 11px; cursor: pointer; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); font-weight: 700; }
+.transport { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.transport button { font: inherit; font-weight: 700; min-width: 42px; height: 38px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--fg); cursor: pointer; padding: 0 12px; }
+.transport button.play[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.stepinfo { font-family: var(--font-code); font-size: 1rem; font-weight: 600; min-width: 8ch; text-align: right; font-variant-numeric: tabular-nums; color: var(--fg); }
+.expr { width: min(360px, 70vw); font-family: var(--font-code); font-size: 1.05rem; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-code); font-size: 0.8rem; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+
+.stage { display: grid; gap: 12px; align-items: start; }
+.stage-mm { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr); }
+.stage-wide { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+@media (max-width: 1100px) { .stage-mm { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .stage-mm .code-card { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .stage-mm, .stage-wide { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card h2 { font-size: 1.1rem; margin: 0; display: flex; align-items: center; gap: 8px; }
+.card h2 small { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+.card h3 { font-size: 0.75rem; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; flex: none; }
+.sw.m { background: var(--m); } .sw.n { background: var(--n); }
+canvas { display: block; width: 100%; }
+.cap { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.verdict { margin: 0; font-size: 1.15rem; font-weight: 700; text-wrap: balance; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+.txn { display: flex; flex-direction: column; gap: 6px; }
+.txn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.pill { font-weight: 700; font-size: 1.05rem; border-radius: 999px; padding: 2px 12px; font-variant-numeric: tabular-nums; }
+.pill.good { background: var(--good-bg); color: var(--good); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+.pill.idle { background: var(--cell); color: var(--muted); }
+.txn-bytes { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.txn-rows { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; }
+.txn-row { display: grid; grid-template-columns: 5.2em minmax(0, 1fr); align-items: center; gap: 6px; }
+.txn-lbl { font-family: var(--font-code); font-size: 0.68rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.txn-cells { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 1px; }
+.txn-cells i { height: 9px; background: var(--c-soft); }
+.txn-cells i.on { background: var(--c); }
+.txn.m { --c: var(--m); --c-soft: var(--m-faint); }
+.txn.n { --c: var(--n); --c-soft: var(--n-faint); }
+.txn-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
+
+.blockmap { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.blockmap canvas { width: 200px; max-width: 100%; cursor: pointer; touch-action: none; flex: none; }
+.bm-side { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.bm-side h3 { margin: 0; }
+.bm-side p { margin: 0; }
+.bm-warp { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bm-side kbd { font-family: var(--font-code); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: var(--bg); }
+.pseudo { display: flex; flex-direction: column; gap: 2px; font-size: 0.95rem; line-height: 1.45; }
+.pseudo h3 { margin: 0 0 4px; }
+.pseudo div { padding: 4px 10px; white-space: pre-wrap; border-left: 4px solid transparent; border-radius: 4px; color: var(--muted); }
+.pseudo div.hl { background: var(--cell); border-left-color: var(--fg); color: var(--fg); font-weight: 700; }
+.pseudo .m { color: var(--m); font-family: var(--font-code); font-size: 0.88rem; }
+.pseudo .n { color: var(--n); font-family: var(--font-code); font-size: 0.88rem; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-family: var(--font-code); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--font-ui); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+td.m { color: var(--m); font-weight: 600; } td.n { color: var(--n); font-weight: 600; }
+.totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tot { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.tot .k { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+.tot .v { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tot .s { font-size: 0.8rem; color: var(--muted); }
+.takeaway { margin: 0; font-size: 0.95rem; border-left: 4px solid var(--fg); padding: 2px 0 2px 10px; }
+.err { color: var(--bad); font-weight: 700; margin: 0; }
+.lanegrid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; font-family: var(--font-code); font-size: 0.72rem; }
+.lanegrid div { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; display: flex; justify-content: space-between; gap: 4px; font-variant-numeric: tabular-nums; }
+.lanegrid b { color: var(--muted); font-weight: 400; }
+footer { color: var(--muted); font-size: 0.8rem; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+footer kbd { font-family: var(--font-code); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--panel); }
+@media (max-width: 600px) { .transport { margin-left: 0; } input[type="range"] { width: 120px; } }
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1>Memory Coalescing Lab</h1>
+      <p class="units">warp = 32 threads · float = 4 B · DRAM burst section = 128 B = 32 floats</p>
+    </div>
+    <nav class="tabs" role="tablist" id="tabs">
+      <button class="tab" role="tab" data-view="primer"><kbd>1</kbd>DRAM bursts</button>
+      <button class="tab" role="tab" data-view="naive"><kbd>2</kbd>Naive matmul</button>
+      <button class="tab" role="tab" data-view="tiled"><kbd>3</kbd>Tiled matmul</button>
+      <button class="tab" role="tab" data-view="sand"><kbd>4</kbd>Index sandbox</button>
+    </nav>
+  </header>
+  <div class="controls" id="controls"></div>
+  <main id="stage"></main>
+  <footer>
+    <span><kbd>←</kbd> <kbd>→</kbd> step</span>
+    <span><kbd>Space</kbd> play or pause</span>
+    <span><kbd>↑</kbd> <kbd>↓</kbd> switch warp (matmul views)</span>
+    <span><kbd>1</kbd>–<kbd>4</kbd> switch view</span>
+    <span>Each warp load is split into one DRAM request per 128-byte burst section it touches.</span>
+  </footer>
+</div>
+
+<script>
+const SEG = 32, WARP = 32, BYTES = 4, SEG_BYTES = 128;
+const $ = s => document.querySelector(s);
+const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+const S = {
+  view: 'primer',
+  primer: { p: 0 },
+  naive: { W: 64, bd: 32, warp: 0, k: 0 },
+  tiled: { W: 64, T: 32, warp: 0, s: 0 },
+  sand: { expr: 'tx*W + k', W: 64, bd: 32, warp: 0, k: 0 },
+};
+let timer = null;
+
+/* ---------- shared helpers ---------- */
+function warpLanes(bdx, warp) {
+  const out = [];
+  for (let l = 0; l < WARP; l++) { const id = warp * WARP + l; out.push({ lane: l, tx: id % bdx, ty: Math.floor(id / bdx) }); }
+  return out;
+}
+function analyze(idxs) {
+  const segs = new Map();
+  idxs.forEach((ix, l) => {
+    if (ix == null) return;
+    const s = Math.floor(ix / SEG), o = ix - s * SEG;
+    if (!segs.has(s)) segs.set(s, new Map());
+    const m = segs.get(s);
+    if (!m.has(o)) m.set(o, []);
+    m.get(o).push(l);
+  });
+  const ids = [...segs.keys()].sort((a, b) => a - b);
+  let uniq = 0; segs.forEach(m => uniq += m.size);
+  return { ids, segs, requests: ids.length, usedBytes: uniq * BYTES, fetchedBytes: ids.length * SEG_BYTES };
+}
+const hex = a => '0x' + a.toString(16).padStart(4, '0');
+function pillClass(n) { return n === 0 ? 'idle' : n === 1 ? 'good' : n <= 4 ? 'warn' : 'bad'; }
+function verdict(an) {
+  if (an.requests === 0) return 'No DRAM traffic.';
+  const eff = Math.round(100 * an.usedBytes / an.fetchedBytes);
+  if (an.requests === 1 && an.usedBytes === SEG_BYTES) return 'Fully coalesced: one 128-byte request, every byte used.';
+  if (an.requests === 1 && an.usedBytes === BYTES) return 'One request. Every lane reads the same word, so the value is broadcast.';
+  if (an.requests === 1) return `Coalesced into one request, but only ${eff}% of the burst is used.`;
+  return `Not coalesced: ${an.requests} requests for one load instruction, ${eff}% of fetched bytes used.`;
+}
+function renderTxn(el, an, opts = {}) {
+  const n = an.requests;
+  if (opts.idle) { el.innerHTML = `<div class="txn-head"><span class="pill idle">0 requests</span><span class="txn-bytes">${opts.idle}</span></div>`; return; }
+  const eff = n ? Math.round(100 * an.usedBytes / an.fetchedBytes) : 0;
+  let html = `<div class="txn-head"><span class="pill ${pillClass(n)}">${n} DRAM request${n === 1 ? '' : 's'}</span>` +
+    `<span class="txn-bytes">${an.usedBytes} B used of ${an.fetchedBytes} B fetched · ${eff}%</span></div>`;
+  if (opts.rows !== false && n) {
+    html += '<div class="txn-rows">';
+    for (const id of an.ids) {
+      const m = an.segs.get(id);
+      let cells = '';
+      for (let o = 0; o < SEG; o++) cells += m.has(o) ? `<i class="on" title="lane ${m.get(o).join(', ')}"></i>` : '<i></i>';
+      html += `<div class="txn-row"><span class="txn-lbl">${hex(id * SEG_BYTES)}</span><div class="txn-cells">${cells}</div></div>`;
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+function setupCanvas(cv, h) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+/* ---------- matrix canvas ---------- */
+function drawMatrix(cv, W, o) {
+  const w = cv.clientWidth;
+  const axis = 18;
+  const size = w - axis;
+  const cell = size / W;
+  const { ctx } = setupCanvas(cv, w);
+  const col = tok(o.c), soft = tok(o.c + '-soft'), faint = tok(o.c + '-faint');
+  const base = tok('--cell'), grid = tok('--line-strong'), fg = tok('--fg'), muted = tok('--muted');
+  ctx.fillStyle = tok('--panel'); ctx.fillRect(0, 0, w, w);
+  const fseg = new Set(o.fetched || []);
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    const idx = r * W + c, seg = Math.floor(idx / SEG);
+    let f = base;
+    if (o.cur && o.cur.has(idx)) f = col;
+    else if (fseg.has(seg)) f = soft;
+    else if (o.hist && o.hist.has(idx)) f = faint;
+    ctx.fillStyle = f;
+    ctx.fillRect(axis + c * cell, axis + r * cell, Math.max(cell - (cell > 5 ? 1 : 0), 0.6), Math.max(cell - (cell > 5 ? 1 : 0), 0.6));
+  }
+  // burst-section boundaries (every 32 floats in linear order)
+  ctx.strokeStyle = grid; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let r = 0; r < W; r++) for (let c = 1; c < W; c++) if ((r * W + c) % SEG === 0) {
+    const x = axis + c * cell - (cell > 5 ? 0.5 : 0);
+    ctx.moveTo(x, axis + r * cell); ctx.lineTo(x, axis + (r + 1) * cell);
+  }
+  ctx.stroke();
+  if (o.region) {
+    const [r0, c0, h, ww] = o.region;
+    ctx.setLineDash([5, 3]); ctx.strokeStyle = fg; ctx.lineWidth = 2;
+    ctx.strokeRect(axis + c0 * cell - 1, axis + r0 * cell - 1, ww * cell + 1, h * cell + 1);
+    ctx.setLineDash([]);
+  }
+  // axes ticks
+  ctx.fillStyle = muted; ctx.font = '10px ' + tok('--font-code');
+  ctx.textBaseline = 'middle';
+  for (let t = 0; t <= W; t += 32) {
+    const p = axis + t * cell;
+    ctx.textAlign = t === W ? 'right' : 'left';
+    ctx.fillText(String(t), Math.min(p, w - 1), axis / 2);
+    ctx.save(); ctx.translate(axis / 2, Math.min(p, w - 2)); ctx.rotate(-Math.PI / 2); ctx.textAlign = t === W ? 'right' : 'left'; ctx.fillText(String(t), 0, 0); ctx.restore();
+  }
+}
+
+/* ---------- warp-to-memory map ---------- */
+function memRows(ids) {
+  if (!ids.length) return [];
+  const min = ids[0], max = ids[ids.length - 1], rows = [];
+  if (max - min < 10) { for (let s = min; s <= max; s++) rows.push({ seg: s }); return rows; }
+  ids.forEach((s, j) => { if (j > 0 && s - ids[j - 1] > 1) rows.push({ gap: s - ids[j - 1] - 1 }); rows.push({ seg: s }); });
+  return rows;
+}
+function drawMemMap(cv, idxs, an, c = '--m') {
+  const w = cv.clientWidth, L = 78, colW = (w - L - 4) / 32;
+  const rows = memRows(an.ids);
+  const nSeg = rows.filter(r => r.seg != null).length, nGap = rows.length - nSeg;
+  const thH = 26, linesH = 64, gapH = 14;
+  const rowH = Math.max(9, Math.min(26, Math.floor(440 / Math.max(nSeg, 1))));
+  const h = thH + linesH + nSeg * rowH + nGap * gapH + 8;
+  const { ctx } = setupCanvas(cv, h);
+  const col = tok(c), soft = tok(c + '-soft'), faint = tok(c + '-faint'), base = tok('--cell'), muted = tok('--muted'), fg = tok('--fg');
+  const code = tok('--font-code');
+  ctx.fillStyle = tok('--panel'); ctx.fillRect(0, 0, w, h);
+  ctx.textBaseline = 'middle';
+  // thread boxes
+  ctx.font = '700 11px ' + tok('--font-ui'); ctx.fillStyle = muted; ctx.textAlign = 'right';
+  ctx.fillText('LANE', L - 8, thH / 2);
+  ctx.font = '10px ' + code;
+  for (let l = 0; l < 32; l++) {
+    const x = L + l * colW;
+    ctx.fillStyle = idxs[l] == null ? base : col; ctx.fillRect(x + 1, 0, colW - 2, thH);
+    ctx.fillStyle = idxs[l] == null ? muted : tok('--panel'); ctx.textAlign = 'center';
+    if (colW > 13 || l % 4 === 0) ctx.fillText(String(l), x + colW / 2, thH / 2);
+  }
+  // rows
+  const rowTop = new Map(); let y = thH + linesH;
+  for (const r of rows) {
+    if (r.gap != null) {
+      ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.font = '10px ' + code;
+      ctx.fillText(`⋮ ${r.gap} section${r.gap === 1 ? '' : 's'} not touched`, L + 4, y + gapH / 2);
+      y += gapH; continue;
+    }
+    rowTop.set(r.seg, y);
+    const m = an.segs.get(r.seg);
+    if (rowH >= 10) { ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.font = Math.min(11, rowH - 1) + 'px ' + code; ctx.fillText(hex(r.seg * SEG_BYTES), L - 8, y + rowH / 2); }
+    for (let o = 0; o < 32; o++) {
+      ctx.fillStyle = m ? (m.has(o) ? col : soft) : base;
+      ctx.fillRect(L + o * colW + 1, y + 1, colW - 2, rowH - 2);
+    }
+    y += rowH;
+  }
+  // lines from lanes to words
+  ctx.strokeStyle = fg; ctx.globalAlpha = 0.45; ctx.lineWidth = 1.2; ctx.beginPath();
+  idxs.forEach((ix, l) => {
+    if (ix == null) return;
+    const s = Math.floor(ix / SEG), o = ix - s * SEG;
+    const ty = rowTop.get(s); if (ty == null) return;
+    ctx.moveTo(L + (l + 0.5) * colW, thH + 2); ctx.lineTo(L + (o + 0.5) * colW, ty + 1);
+  });
+  ctx.stroke(); ctx.globalAlpha = 1;
+}
+
+/* ---------- view: DRAM bursts ---------- */
+function rnd(seed) { return () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648; }
+const PRESETS = [
+  { name: 'Consecutive', code: 'A[tx]', f: l => l, cap: '32 lanes × 4 B = 128 B. The addresses fill exactly one burst section.' },
+  { name: 'Permuted', code: 'A[(tx*7) % 32]', f: l => (l * 7) % 32, cap: 'Same section, scrambled order. The hardware only cares which sections are touched, not the order inside them.' },
+  { name: 'Broadcast', code: 'A[0]', f: () => 0, cap: 'Every lane reads one word. One request serves the whole warp.' },
+  { name: 'Misaligned', code: 'A[tx + 4]', f: l => l + 4, cap: 'Consecutive, but shifted by 16 B, so the run straddles a section boundary.' },
+  { name: 'Stride 2', code: 'A[2*tx]', f: l => 2 * l, cap: 'Every other float. Twice the sections, half of every burst is thrown away.' },
+  { name: 'Stride 32', code: 'A[tx*32]', f: l => 32 * l, cap: 'Walking down a column of a 32-wide row-major matrix. Each lane needs its own burst.' },
+  { name: 'Scattered', code: 'A[random]', f: (() => { const r = rnd(7), v = []; for (let i = 0; i < 32; i++) v.push(Math.floor(r() * 2048)); return l => v[l]; })(), cap: 'Irregular gathers, as in sparse or pointer-chasing code.' },
+];
+const DRAM_ROW_SEGS = 16, T_ACT = 4, T_BURST = 2;
+function timing(an) {
+  let open = null; const ev = [];
+  for (const id of an.ids) { const row = Math.floor(id / DRAM_ROW_SEGS); if (row !== open) { ev.push('act'); open = row; } ev.push('burst'); }
+  return ev;
+}
+const evCost = e => e === 'act' ? T_ACT : T_BURST;
+function drawTiming(cv, an) {
+  const ev = timing(an), total = ev.reduce((a, e) => a + evCost(e), 0);
+  const maxT = Math.max(...PRESETS.map(p => timing(analyze(range32().map(p.f))).reduce((a, e) => a + evCost(e), 0)), total);
+  const { ctx, w } = setupCanvas(cv, 44);
+  ctx.fillStyle = tok('--panel'); ctx.fillRect(0, 0, w, 44);
+  ctx.fillStyle = tok('--cell'); ctx.fillRect(0, 6, w, 24);
+  const sx = w / maxT; let x = 0;
+  for (const e of ev) {
+    const ww = evCost(e) * sx;
+    ctx.fillStyle = e === 'act' ? tok('--line-strong') : tok('--m');
+    ctx.fillRect(x + 0.5, 6, Math.max(ww - 1, 1), 24); x += ww;
+  }
+  ctx.fillStyle = tok('--muted'); ctx.font = '10px ' + tok('--font-code'); ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  ctx.fillText(`${total} time units`, 0, 32);
+  return { ev, total };
+}
+const range32 = () => Array.from({ length: 32 }, (_, i) => i);
+
+function ctlPrimer() {
+  return `<div class="ctl"><span class="lbl">Access pattern</span><div class="seg" id="pseg">${PRESETS.map((p, i) => `<button data-p="${i}">${p.name}</button>`).join('')}</div></div>` + transport();
+}
+function stagePrimer() {
+  return `<div class="stage stage-wide">
+    <section class="card"><h2><span class="sw m"></span>One warp executes <code id="pcode"></code></h2>
+      <p class="cap" id="pcap"></p><canvas id="mem"></canvas>
+      <div class="legend"><span><i style="background:var(--m)"></i>word a lane asked for</span><span><i style="background:var(--m-soft)"></i>fetched in the same burst, unused</span><span>Each row is one 128-byte burst section.</span></div>
+    </section>
+    <section class="card"><h2>What DRAM sees</h2><p class="verdict" id="pverdict"></p><div id="txn" class="txn m"></div>
+      <h3>Bus time, simplified (one bank, 2 KB DRAM rows)</h3><canvas id="timing"></canvas>
+      <div class="legend"><span><i style="background:var(--line-strong)"></i>row activate</span><span><i style="background:var(--m)"></i>128 B burst</span></div>
+      <p class="cap" id="tnote"></p>
+    </section></div>`;
+}
+function renderPrimer() {
+  const p = PRESETS[S.primer.p];
+  document.querySelectorAll('#pseg button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.p === S.primer.p));
+  const idxs = range32().map(p.f), an = analyze(idxs);
+  $('#pcode').textContent = p.code; $('#pcap').textContent = p.cap; $('#pverdict').textContent = verdict(an);
+  renderTxn($('#txn'), an, { rows: false });
+  drawMemMap($('#mem'), idxs, an);
+  const t = drawTiming($('#timing'), an);
+  const acts = t.ev.filter(e => e === 'act').length;
+  $('#tnote').textContent = `${acts} row activate${acts === 1 ? '' : 's'} + ${an.requests} burst${an.requests === 1 ? '' : 's'}. A coalesced load costs ${T_ACT + T_BURST} units.`;
+  setStepInfo(`${S.primer.p + 1}/${PRESETS.length}`);
+}
+
+/* ---------- view: naive matmul ---------- */
+function naiveLanes() {
+  const st = S.naive;
+  return warpLanes(st.bd, st.warp).map(o => ({ ...o, Row: o.ty, Col: o.tx }));
+}
+function naiveIdx(lanes, W, k) { return { M: lanes.map(o => o.Row * W + k), N: lanes.map(o => k * W + o.Col) }; }
+function ctlNaive() {
+  const st = S.naive, nw = st.bd * st.bd / WARP;
+  return `<div class="ctl"><label for="nW">Width</label><select id="nW">${[32, 64, 128].map(v => `<option ${v === st.W ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="ctl"><label for="nBd">Block</label><select id="nBd">${[32, 16, 8].map(v => `<option value="${v}" ${v === st.bd ? 'selected' : ''}>${v}×${v}</option>`).join('')}</select></div>
+    <div class="ctl"><label for="nK">k</label><input type="range" id="nK" min="0" max="${st.W - 1}" value="${st.k}"></div>` + transport();
+}
+const naivePseudo = (W, k) => [
+  ['', `Each thread computes one P[Row][Col]. Row follows ty, Col follows tx.`],
+  ['', `Repeat for k = 0 … ${W - 1}:`],
+  ['load', `    read <span class="m">M[Row][${k}]</span> and <span class="n">N[${k}][Col]</span> from global memory`],
+  ['', `    add their product to the running sum`],
+  ['', `Write the sum to P[Row][Col].`],
+];
+function pseudoHTML(lines, hl) { return `<h3>What this step does</h3>` + lines.map(([id, h]) => `<div class="${hl.includes(id) && id ? 'hl' : ''}">${h}</div>`).join(''); }
+function stageMM(code) {
+  return `<div class="stage stage-mm">
+    <section class="card"><h2><span class="sw m"></span>M <small>(A in the slides)</small></h2><canvas id="cvM"></canvas>
+      <div class="legend"><span><i style="background:var(--m)"></i>this load</span><span><i style="background:var(--m-soft)"></i>fetched, unused</span><span><i style="background:var(--m-faint)"></i>loaded earlier</span></div>
+      <div id="txM" class="txn m"></div></section>
+    <section class="card"><h2><span class="sw n"></span>N <small>(B in the slides)</small></h2><canvas id="cvN"></canvas>
+      <div class="legend"><span><i style="background:var(--n)"></i>this load</span><span><i style="background:var(--n-soft)"></i>fetched, unused</span><span><i style="background:var(--n-faint)"></i>loaded earlier</span></div>
+      <div id="txN" class="txn n"></div></section>
+    <section class="card code-card">
+      <div class="blockmap"><canvas id="bm" aria-label="Thread block map. Click a warp to select it."></canvas>
+        <div class="bm-side"><h3>Thread block</h3><p class="bm-warp" id="bmWarp"></p><p class="cap" id="bmInfo"></p><p class="cap">Click or drag across the block to pick a warp. <kbd>↑</kbd> <kbd>↓</kbd> step through warps.</p></div></div>
+      <div class="pseudo" id="code"></div>
+      <div class="tbl-wrap"><table id="lanes"></table></div>
+      <div class="totals" id="totals"></div><p class="takeaway" id="take"></p></section></div>`;
+}
+const SHOW_LANES = [0, 1, 2, 16, 31];
+function laneTable(lanes, M, N, extra = '') {
+  return `<thead><tr><th>lane</th><th>tx, ty</th><th>M index</th><th>N index</th></tr></thead><tbody>` +
+    SHOW_LANES.map(l => `<tr><td>${l}</td><td>${lanes[l].tx}, ${lanes[l].ty}</td><td class="m">${M[l] ?? '–'}</td><td class="n">${N[l] ?? '–'}</td></tr>`).join('') + `</tbody>`;
+}
+function tot(k, v, s) { return `<div class="tot"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`; }
+function naiveTotals(lanes, W, upto) {
+  let m = 0, n = 0;
+  for (let k = 0; k <= upto; k++) { const ix = naiveIdx(lanes, W, k); m += analyze(ix.M).requests; n += analyze(ix.N).requests; }
+  return { m, n };
+}
+function renderNaive() {
+  const st = S.naive, W = st.W, k = st.k, lanes = naiveLanes();
+  const cur = naiveIdx(lanes, W, k), aM = analyze(cur.M), aN = analyze(cur.N);
+  const hM = new Set(), hN = new Set();
+  for (let kk = 0; kk < k; kk++) { const ix = naiveIdx(lanes, W, kk); ix.M.forEach(v => hM.add(v)); ix.N.forEach(v => hN.add(v)); }
+  drawMatrix($('#cvM'), W, { c: '--m', cur: new Set(cur.M), fetched: aM.ids, hist: hM });
+  drawMatrix($('#cvN'), W, { c: '--n', cur: new Set(cur.N), fetched: aN.ids, hist: hN });
+  renderTxn($('#txM'), aM); renderTxn($('#txN'), aN);
+  $('#code').innerHTML = pseudoHTML(naivePseudo(W, k), ['load']);
+  $('#lanes').innerHTML = laneTable(lanes, cur.M, cur.N);
+  const sofar = naiveTotals(lanes, W, k), all = naiveTotals(lanes, W, W - 1);
+  $('#totals').innerHTML = tot('Requests so far', `<span style="color:var(--m)">${sofar.m}</span> + <span style="color:var(--n)">${sofar.n}</span>`, `M + N, iterations 0 to ${k}`) +
+    tot('Whole loop, this warp', all.m + all.n, `${W} iterations × 2 loads`);
+  const rows = 32 / st.bd;
+  $('#take').textContent = st.bd === 32
+    ? 'Warps are formed along threadIdx.x, so all 32 lanes share one Row and have consecutive Col. M[Row][k] is one address (broadcast) and N[k][Col] is 32 consecutive floats. Both loads coalesce. The naive kernel is slow because of how many loads it issues, not their shape.'
+    : `With ${st.bd}×${st.bd} blocks a warp covers ${rows} values of threadIdx.y. M[Row][k] becomes ${rows} addresses in ${rows} different sections, and N[k][Col] becomes ${rows} copies of the same ${st.bd} consecutive floats, so N still costs one request but uses only ${st.bd * 4} B of the burst.`;
+  setStepInfo(`k = ${k}`);
+}
+
+/* ---------- thread-block warp picker (naive and tiled views) ---------- */
+function warpSel() {
+  return S.view === 'naive'
+    ? { bd: S.naive.bd, get: () => S.naive.warp, set: v => S.naive.warp = v }
+    : { bd: S.tiled.T, get: () => S.tiled.warp, set: v => S.tiled.warp = v };
+}
+const BM_PAD = 18;
+function drawBlockMap() {
+  const cv = $('#bm'); if (!cv) return;
+  const { bd, get } = warpSel(), warp = get(), w = cv.clientWidth, cell = (w - BM_PAD) / bd;
+  const { ctx } = setupCanvas(cv, w);
+  ctx.fillStyle = tok('--panel'); ctx.fillRect(0, 0, w, w);
+  const sel = tok('--fg'), a = tok('--cell'), b = tok('--line'), gap = cell > 5 ? 1 : 0;
+  for (let ty = 0; ty < bd; ty++) for (let tx = 0; tx < bd; tx++) {
+    const wp = Math.floor((ty * bd + tx) / WARP);
+    ctx.fillStyle = wp === warp ? sel : (wp % 2 ? b : a);
+    ctx.fillRect(BM_PAD + tx * cell, BM_PAD + ty * cell, cell - gap, cell - gap);
+  }
+  ctx.fillStyle = tok('--muted'); ctx.font = '10px ' + tok('--font-code'); ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left'; ctx.fillText('tx →', BM_PAD, BM_PAD / 2);
+  ctx.save(); ctx.translate(BM_PAD / 2, BM_PAD); ctx.rotate(Math.PI / 2); ctx.fillText('ty →', 0, 0); ctx.restore();
+  const rows = WARP / bd, t0 = warp * rows;
+  $('#bmWarp').textContent = `Warp ${warp} of ${bd * bd / WARP}`;
+  $('#bmInfo').textContent = `${bd}×${bd} block. This warp is ty = ${rows === 1 ? t0 : `${t0}–${t0 + rows - 1}`}, tx = 0–${bd - 1}.`;
+}
+function bindBlockMap() {
+  const cv = $('#bm'); if (!cv) return;
+  const pick = e => {
+    const { bd, get, set } = warpSel(), r = cv.getBoundingClientRect(), cell = (r.width - BM_PAD) / bd;
+    const tx = Math.floor((e.clientX - r.left - BM_PAD) / cell), ty = Math.floor((e.clientY - r.top - BM_PAD) / cell);
+    if (tx < 0 || ty < 0 || tx >= bd || ty >= bd) return;
+    const wp = Math.floor((ty * bd + tx) / WARP);
+    if (wp !== get()) { set(wp); render(); }
+  };
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pick(e); });
+  cv.addEventListener('pointermove', e => { if (e.buttons) pick(e); });
+}
+function stepWarp(d) {
+  const { bd, get, set } = warpSel(), n = bd * bd / WARP;
+  set((get() + d + n) % n); render();
+}
+
+/* ---------- view: tiled matmul ---------- */
+const tiledPseudo = (W, T, ph) => [
+  ['', `The block computes a ${T}×${T} tile of P. Each thread computes one P[Row][Col].`],
+  ['', `Repeat for phase ph = 0 … ${W / T - 1}:`],
+  ['ldM', `    1. each thread copies <span class="m">M[Row][${ph * T} + tx]</span> into the shared M tile`],
+  ['ldN', `    2. each thread copies <span class="n">N[${ph * T} + ty][Col]</span> into the shared N tile`],
+  ['comp', `    3. wait for the whole block, then do ${T} multiply-adds using only the shared tiles, and wait again`],
+  ['', `Write the sum to P[Row][Col].`],
+];
+function tiledIdx(lanes, W, T, ph) { return { M: lanes.map(o => o.ty * W + ph * T + o.tx), N: lanes.map(o => (ph * T + o.ty) * W + o.tx) }; }
+function ctlTiled() {
+  const st = S.tiled, nw = st.T * st.T / WARP, steps = 3 * st.W / st.T;
+  return `<div class="ctl"><label for="tW">Width</label><select id="tW">${[32, 64, 128].map(v => `<option ${v === st.W ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="ctl"><label for="tT">TILE_WIDTH</label><select id="tT">${[32, 16, 8].map(v => `<option ${v === st.T ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="ctl"><label for="tS">Step</label><input type="range" id="tS" min="0" max="${steps - 1}" value="${st.s}"></div>` + transport();
+}
+function renderTiled() {
+  const st = S.tiled, W = st.W, T = st.T, ph = Math.floor(st.s / 3), sub = st.s % 3;
+  const lanes = warpLanes(T, st.warp), cur = tiledIdx(lanes, W, T, ph);
+  const aM = analyze(cur.M), aN = analyze(cur.N);
+  // everything the whole block has staged so far
+  const all = warpLanes(T, 0).concat(...Array.from({ length: T * T / WARP - 1 }, (_, i) => warpLanes(T, i + 1)));
+  const hM = new Set(), hN = new Set();
+  for (let p = 0; p <= ph; p++) {
+    const ix = tiledIdx(all, W, T, p);
+    ix.M.forEach(v => hM.add(v));
+    if (p < ph || sub >= 1) ix.N.forEach(v => hN.add(v));
+  }
+  drawMatrix($('#cvM'), W, { c: '--m', cur: sub === 0 ? new Set(cur.M) : null, fetched: sub === 0 ? aM.ids : [], hist: hM, region: [0, ph * T, T, T] });
+  drawMatrix($('#cvN'), W, { c: '--n', cur: sub === 1 ? new Set(cur.N) : null, fetched: sub === 1 ? aN.ids : [], hist: hN, region: [ph * T, 0, T, T] });
+  if (sub === 0) { renderTxn($('#txM'), aM); renderTxn($('#txN'), aN, { idle: 'N is loaded in the next step.' }); }
+  else if (sub === 1) { renderTxn($('#txM'), aM, { idle: 'M tile already sits in shared memory (Mds).' }); renderTxn($('#txN'), aN); }
+  else { renderTxn($('#txM'), aM, { idle: 'Reading Mds from shared memory.' }); renderTxn($('#txN'), aN, { idle: 'Reading Nds from shared memory.' }); }
+  $('#code').innerHTML = pseudoHTML(tiledPseudo(W, T, ph), [['ldM'], ['ldN'], ['comp']][sub]);
+  $('#lanes').innerHTML = laneTable(lanes, sub === 0 ? cur.M : [], sub === 1 ? cur.N : []);
+  // totals
+  const P = W / T; let soFar = 0, whole = 0;
+  for (let p = 0; p < P; p++) {
+    const ix = tiledIdx(lanes, W, T, p), r = analyze(ix.M).requests + analyze(ix.N).requests;
+    whole += r;
+    if (p < ph) soFar += r; else if (p === ph) soFar += analyze(ix.M).requests + (sub >= 1 ? analyze(ix.N).requests : 0);
+  }
+  const nl = warpLanes(T, st.warp).map(o => ({ ...o, Row: o.ty, Col: o.tx }));
+  const naive = naiveTotals(nl, W, W - 1);
+  $('#totals').innerHTML = tot('Tiled, whole kernel', whole, `this warp, ${P} phase${P === 1 ? '' : 's'} × 2 tile loads · ${soFar} so far`) +
+    tot('Naive, same warp', naive.m + naive.n, `${W} iterations × 2 loads, ${T}×${T} blocks`);
+  const eff = Math.round(100 * aM.usedBytes / aM.fetchedBytes);
+  $('#take').textContent = [
+    `Phase ${ph}: each thread loads M[Row][ph*${T} + tx]. Neighbouring lanes have neighbouring tx, so the warp reads ${T === 32 ? 'one full 128-byte row segment' : `${32 / T} row segments of ${T * 4} B each (${eff}% of each burst)`}.`,
+    `Phase ${ph}: each thread loads N[ph*${T} + ty][Col]. Col follows tx, so neighbouring lanes again read neighbouring floats. This load coalesces the same way, even though the algorithm walks down N's columns.`,
+    `Phase ${ph}: the inner loop runs ${T} times from shared memory with zero DRAM requests. Each value fetched once is reused by ${T} threads.`,
+  ][sub];
+  setStepInfo(`ph ${ph} · ${['load M', 'load N', 'compute'][sub]}`);
+}
+
+/* ---------- view: index sandbox ---------- */
+const ALIAS = { tx: 'tx', 'threadIdx.x': 'tx', ty: 'ty', 'threadIdx.y': 'ty', k: 'k', ph: 'k', i: 'k', W: 'W', Width: 'W', width: 'W', N: 'W',
+  bdx: 'bdx', 'blockDim.x': 'bdx', 'blockDim.y': 'bdx', TILE_WIDTH: 'bdx', T: 'bdx', Row: 'ty', Col: 'tx', lane: 'lane', bx: 'bx', by: 'bx', 'blockIdx.x': 'bx', 'blockIdx.y': 'bx' };
+function parseExpr(src) {
+  const toks = []; const re = /\s*(?:(\d+)|([A-Za-z_][\w.]*)|(\S))/y; let m;
+  while (re.lastIndex < src.length && (m = re.exec(src))) {
+    if (m[1]) toks.push({ t: 'num', v: +m[1] });
+    else if (m[2]) toks.push({ t: 'id', v: m[2] });
+    else if (m[3]) { if ('+-*/%()'.includes(m[3])) toks.push({ t: 'op', v: m[3] }); else throw Error(`"${m[3]}" is not supported. Use + - * / % and parentheses.`); }
+  }
+  let i = 0;
+  const eat = v => (toks[i] && toks[i].t === 'op' && toks[i].v === v) ? (i++, true) : false;
+  const bin = (l, r, f) => v => f(l(v), r(v));
+  function add() { let a = mul(); for (;;) { if (eat('+')) a = bin(a, mul(), (x, y) => x + y); else if (eat('-')) a = bin(a, mul(), (x, y) => x - y); else return a; } }
+  function mul() { let a = un(); for (;;) {
+    if (eat('*')) a = bin(a, un(), (x, y) => x * y);
+    else if (eat('/')) a = bin(a, un(), (x, y) => { if (!y) throw Error('Division by zero.'); return Math.trunc(x / y); });
+    else if (eat('%')) a = bin(a, un(), (x, y) => { if (!y) throw Error('Modulo by zero.'); return x % y; });
+    else return a; } }
+  function un() { if (eat('-')) { const x = un(); return v => -x(v); } if (eat('+')) return un(); return atom(); }
+  function atom() {
+    const t = toks[i++];
+    if (!t) throw Error('The expression ends too early.');
+    if (t.t === 'num') return () => t.v;
+    if (t.t === 'id') { const n = ALIAS[t.v]; if (!n) throw Error(`Unknown name "${t.v}". Use tx, ty, k, W, bdx, Row, Col.`); return v => v[n]; }
+    if (t.v === '(') { const e = add(); if (!eat(')')) throw Error('Missing ")".'); return e; }
+    throw Error(`Unexpected "${t.v}".`);
+  }
+  if (!toks.length) throw Error('Type an index expression.');
+  const f = add(); if (i < toks.length) throw Error(`Unexpected "${toks[i].v}".`);
+  return f;
+}
+function compile(src) {
+  const s = src.trim(), m = s.match(/^[A-Za-z_]\w*\s*(\[.*\])\s*;?$/);
+  let parts = [s.replace(/;$/, '')];
+  if (m) {
+    parts = []; let depth = 0, cur = '';
+    for (const ch of m[1]) {
+      if (ch === '[') { if (depth++) cur += ch; }
+      else if (ch === ']') { if (--depth) cur += ch; else { parts.push(cur); cur = ''; } }
+      else if (depth) cur += ch; else if (ch.trim()) throw Error('Brackets do not match.');
+    }
+    if (depth) throw Error('Brackets do not match.');
+  }
+  const fs = parts.map(parseExpr);
+  if (fs.length === 1) return fs[0];
+  if (fs.length === 2) return v => fs[0](v) * v.W + fs[1](v);
+  throw Error('Use one index A[i] or two A[row][col].');
+}
+const SAND_PRESETS = ['A[tx]', 'A[tx*W + k]', 'A[k*W + tx]', 'A[Row][k]', 'A[k][Col]', 'A[ty*W + tx]', 'A[2*tx]', 'A[tx + 1]', 'A[(tx%8)*W + tx/8]'];
+function ctlSand() {
+  const st = S.sand;
+  return `<div class="ctl"><label for="sExpr">Index</label><input type="text" id="sExpr" class="expr" value="${st.expr.replace(/"/g, '&quot;')}" spellcheck="false" autocomplete="off"></div>
+    <div class="ctl"><label for="sW">Width</label><input type="number" id="sW" min="1" max="4096" value="${st.W}"></div>
+    <div class="ctl"><label for="sBd">blockDim.x</label><select id="sBd">${[32, 16, 8, 4, 1].map(v => `<option ${v === st.bd ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="ctl"><label for="sWarp">Warp</label><input type="number" id="sWarp" min="0" max="31" value="${st.warp}"></div>
+    <div class="ctl"><label for="sK">k</label><input type="range" id="sK" min="0" max="${Math.max(st.W - 1, 0)}" value="${st.k}"></div>` + transport() +
+    `<div class="chips" style="flex-basis:100%">${SAND_PRESETS.map(p => `<button class="chip" data-expr="${p}">${p}</button>`).join('')}</div>`;
+}
+function stageSand() {
+  return `<div class="stage stage-wide">
+    <section class="card"><h2><span class="sw m"></span>Addresses for one warp</h2><p class="cap">Names: <code>tx ty k W bdx Row Col</code>. <code>Row</code> = ty and <code>Col</code> = tx for block (0, 0). <code>A[r][c]</code> means <code>A[r*W + c]</code>. Division is C integer division.</p>
+      <p class="err" id="sErr"></p><canvas id="mem"></canvas>
+      <div class="legend"><span><i style="background:var(--m)"></i>word a lane asked for</span><span><i style="background:var(--m-soft)"></i>fetched in the same burst, unused</span></div></section>
+    <section class="card"><h2>What DRAM sees</h2><p class="verdict" id="sVerdict"></p><div id="txn" class="txn m"></div>
+      <h3>Lane → index</h3><div class="lanegrid" id="laneGrid"></div>
+      <p class="takeaway">Rule of thumb from the slides: the load coalesces when the index has the form (terms without threadIdx.x) + threadIdx.x.</p></section></div>`;
+}
+function renderSand() {
+  const st = S.sand;
+  let f, err = '';
+  try { f = compile(st.expr); } catch (e) { err = e.message; }
+  let idxs = [];
+  if (!err) {
+    try {
+      idxs = warpLanes(st.bd, st.warp).map(o => f({ tx: o.tx, ty: o.ty, k: st.k, W: st.W, bdx: st.bd, lane: o.lane, bx: 0 }));
+      if (idxs.some(v => v < 0)) err = 'Some lanes compute a negative index.';
+      else if (idxs.some(v => !Number.isFinite(v))) err = 'The index is not a finite number.';
+    } catch (e) { err = e.message; }
+  }
+  $('#sErr').textContent = err; $('#sErr').hidden = !err;
+  if (err) idxs = range32().map(() => null);
+  const an = analyze(idxs);
+  $('#sVerdict').textContent = err ? 'Fix the expression to see the access.' : verdict(an);
+  renderTxn($('#txn'), an);
+  drawMemMap($('#mem'), idxs, an);
+  $('#laneGrid').innerHTML = idxs.map((v, l) => `<div><b>${l}</b><span>${v ?? '–'}</span></div>`).join('');
+  setStepInfo(`k = ${st.k}`);
+}
+
+/* ---------- controls, stepping, wiring ---------- */
+function transport() {
+  return `<div class="transport"><button id="prev" aria-label="Previous step">◀</button><button id="play" class="play" aria-pressed="${!!timer}" aria-label="Play or pause">${timer ? 'Pause' : 'Play'}</button><button id="next" aria-label="Next step">▶</button><span class="stepinfo" id="stepinfo"></span></div>`;
+}
+function setStepInfo(t) { const e = $('#stepinfo'); if (e) e.textContent = t; }
+const VIEWS = {
+  primer: { ctl: ctlPrimer, stage: stagePrimer, render: renderPrimer, n: () => PRESETS.length, get: () => S.primer.p, set: v => S.primer.p = v },
+  naive: { ctl: ctlNaive, stage: () => stageMM(), render: renderNaive, n: () => S.naive.W, get: () => S.naive.k, set: v => S.naive.k = v, slider: 'nK' },
+  tiled: { ctl: ctlTiled, stage: () => stageMM(), render: renderTiled, n: () => 3 * S.tiled.W / S.tiled.T, get: () => S.tiled.s, set: v => S.tiled.s = v, slider: 'tS' },
+  sand: { ctl: ctlSand, stage: stageSand, render: renderSand, n: () => Math.max(S.sand.W, 1), get: () => S.sand.k, set: v => S.sand.k = v, slider: 'sK' },
+};
+function render() { VIEWS[S.view].render(); if (S.view === 'naive' || S.view === 'tiled') drawBlockMap(); const sl = VIEWS[S.view].slider && $('#' + VIEWS[S.view].slider); if (sl) sl.value = VIEWS[S.view].get(); }
+function buildControls() { $('#controls').innerHTML = VIEWS[S.view].ctl(); bindControls(); }
+function switchView(v) {
+  S.view = v;
+  document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.view === v));
+  try { localStorage.setItem('coalesce-view', v); } catch (e) {}
+  $('#stage').innerHTML = VIEWS[v].stage();
+  bindBlockMap(); buildControls(); render();
+}
+function step(d) { const V = VIEWS[S.view], n = V.n(); V.set((V.get() + d + n) % n); render(); }
+function togglePlay() {
+  if (timer) { clearInterval(timer); timer = null; } else timer = setInterval(() => step(1), S.view === 'primer' ? 2200 : 1100);
+  const b = $('#play'); if (b) { b.setAttribute('aria-pressed', !!timer); b.textContent = timer ? 'Pause' : 'Play'; }
+}
+function stopPlay() { if (timer) togglePlay(); }
+function bindControls() {
+  const on = (id, ev, fn) => { const e = $('#' + id); if (e) e.addEventListener(ev, fn); };
+  on('prev', 'click', () => step(-1)); on('next', 'click', () => step(1)); on('play', 'click', togglePlay);
+  document.querySelectorAll('#pseg button').forEach(b => b.addEventListener('click', () => { S.primer.p = +b.dataset.p; render(); }));
+  on('nW', 'change', e => { S.naive.W = +e.target.value; S.naive.k = Math.min(S.naive.k, S.naive.W - 1); buildControls(); render(); });
+  on('nBd', 'change', e => { S.naive.bd = +e.target.value; S.naive.warp = 0; buildControls(); render(); });
+  on('nWarp', 'change', e => { S.naive.warp = +e.target.value; render(); });
+  on('nK', 'input', e => { S.naive.k = +e.target.value; render(); });
+  on('tW', 'change', e => { S.tiled.W = +e.target.value; S.tiled.s = 0; buildControls(); render(); });
+  on('tT', 'change', e => { S.tiled.T = +e.target.value; S.tiled.s = 0; S.tiled.warp = 0; buildControls(); render(); });
+  on('tWarp', 'change', e => { S.tiled.warp = +e.target.value; render(); });
+  on('tS', 'input', e => { S.tiled.s = +e.target.value; render(); });
+  on('sExpr', 'input', e => { S.sand.expr = e.target.value; render(); });
+  on('sW', 'change', e => { S.sand.W = Math.max(1, Math.min(4096, +e.target.value || 1)); S.sand.k = Math.min(S.sand.k, S.sand.W - 1); buildControls(); render(); });
+  on('sBd', 'change', e => { S.sand.bd = +e.target.value; render(); });
+  on('sWarp', 'change', e => { S.sand.warp = Math.max(0, Math.min(31, +e.target.value || 0)); render(); });
+  on('sK', 'input', e => { S.sand.k = +e.target.value; render(); });
+  document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { S.sand.expr = b.dataset.expr; $('#sExpr').value = S.sand.expr; render(); }));
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => { stopPlay(); switchView(t.dataset.view); }));
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' && e.target.type === 'text') return;
+  if (tag === 'select') return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+  else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (S.view === 'naive' || S.view === 'tiled')) { e.preventDefault(); stepWarp(e.key === 'ArrowDown' ? 1 : -1); }
+  else if (['1', '2', '3', '4'].includes(e.key)) { stopPlay(); switchView(['primer', 'naive', 'tiled', 'sand'][+e.key - 1]); }
+});
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 80); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+let start = 'primer'; try { const v = localStorage.getItem('coalesce-view'); if (v && VIEWS[v]) start = v; } catch (e) {}
+switchView(start);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(render);
+window.addEventListener('load', render);
+requestAnimationFrame(render);
+</script>
