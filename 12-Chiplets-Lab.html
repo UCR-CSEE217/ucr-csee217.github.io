@@ -1,0 +1,730 @@
+<title>Chiplet Tradeoffs Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: projector-first lab bench (same family as the Memory Coalescing Lab). Header with the one
+   shared knob (cores per chiplet), three tabs that follow slides 9-12, each tab = control strip + stage.
+   Silicon dies are green, defects red, monolithic = ink, unsorted chiplets = blue, sorted = red-orange, latency = purple. */
+:root {
+  --bg: #f2f4f3; --panel: #ffffff; --fg: #141a18; --muted: #58635f; --line: #d3dad7; --line-strong: #7d8a85;
+  --wafer: #e4e8ec; --wafer-edge: #aab3bb;
+  --die: #8fc14a; --die-edge: #5f8f25; --die-bad: #f1b3ad; --die-bad-edge: #c0392b; --defect: #8b1a10;
+  --mono: #1d2421; --unsorted: #1f78c8; --sorted: #d4472b; --lat: #7b4fb8; --prod: #a2721b;
+  --accent: #3f7d1c; --accent-soft: #e3efd6; --sel: rgba(63,125,28,0.10);
+  --hbm: #1f8f96;
+  --good: #15803d; --bad: #b91c1c;
+  --focus: #1f6fd6;
+  --font-ui: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1211; --panel: #161c1a; --fg: #e6ece9; --muted: #9aa7a2; --line: #2a3330; --line-strong: #66736e;
+    --wafer: #222a30; --wafer-edge: #56626c;
+    --die: #6f9e33; --die-edge: #a6d36a; --die-bad: #5a2622; --die-bad-edge: #f0786a; --defect: #ff8f80;
+    --mono: #e6ece9; --unsorted: #5aa9f0; --sorted: #ff7a5c; --lat: #b592ee; --prod: #e0b35a;
+    --accent: #9fd36b; --accent-soft: #23331a; --sel: rgba(159,211,107,0.12);
+    --hbm: #4cc1c8;
+    --good: #4ade80; --bad: #f87171;
+    --focus: #78a8ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1211; --panel: #161c1a; --fg: #e6ece9; --muted: #9aa7a2; --line: #2a3330; --line-strong: #66736e;
+  --wafer: #222a30; --wafer-edge: #56626c;
+  --die: #6f9e33; --die-edge: #a6d36a; --die-bad: #5a2622; --die-bad-edge: #f0786a; --defect: #ff8f80;
+  --mono: #e6ece9; --unsorted: #5aa9f0; --sorted: #ff7a5c; --lat: #b592ee; --prod: #e0b35a;
+  --accent: #9fd36b; --accent-soft: #23331a; --sel: rgba(159,211,107,0.12);
+  --hbm: #4cc1c8;
+  --good: #4ade80; --bad: #f87171;
+  --focus: #78a8ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 16px; line-height: 1.4;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 24px;
+}
+.app { max-width: 1500px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
+h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { margin: 2px 0 0; color: var(--muted); }
+.kpick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kpick .lbl { font-weight: 700; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.seg button {
+  font: 700 1.05rem var(--font-code); padding: 6px 14px; border: 0; background: var(--panel); color: var(--fg);
+  cursor: pointer; border-left: 1px solid var(--line); min-width: 3.2em;
+}
+.seg button:first-child { border-left: 0; }
+.seg button[aria-checked="true"] { background: var(--accent); color: var(--panel); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); flex-wrap: wrap; }
+.tabs button {
+  font: 700 1rem var(--font-ui); padding: 8px 16px; border: 0; background: transparent; color: var(--muted);
+  cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.tabs button .pg { font: 400 0.8rem var(--font-code); margin-left: 6px; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.view { display: flex; flex-direction: column; gap: 12px; }
+.controls {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 22px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+}
+.ctl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ctl label { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; color: var(--muted); }
+.ctl label output { font: 600 0.9rem var(--font-code); color: var(--fg); font-variant-numeric: tabular-nums; }
+.ctl input[type=range] { width: 100%; accent-color: var(--accent); }
+.stage { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 980px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.card h2 { font-size: 1.05rem; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card h2 .hint { font-weight: 400; font-size: 0.85rem; color: var(--muted); }
+.wafers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wafer { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.wafer canvas { width: 100%; max-width: 360px; aspect-ratio: 1; height: auto; }
+.wafer .cap { font-weight: 700; text-align: center; }
+.wafer .cnt { font: 0.9rem var(--font-code); color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.wafer .cnt b { color: var(--fg); font-size: 1.05rem; }
+.btn {
+  font: 700 0.9rem var(--font-ui); padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line-strong);
+  background: var(--panel); color: var(--fg); cursor: pointer;
+}
+.btn:hover { background: var(--accent-soft); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.85rem; color: var(--muted); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--line-strong); }
+svg.chart { width: 100%; height: auto; display: block; }
+svg.chart text { fill: var(--muted); font-family: var(--font-ui); font-size: 13px; }
+svg.chart .axis-title { fill: var(--fg); font-weight: 700; font-size: 13px; }
+svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+svg.chart .col { fill: transparent; cursor: pointer; }
+svg.chart .col:hover { fill: var(--sel); }
+svg.chart .selband { fill: var(--sel); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; color: var(--muted); }
+thead th { color: var(--fg); font-size: 0.85rem; }
+td.num { font-family: var(--font-code); }
+tr.total td { font-weight: 700; color: var(--fg); border-bottom: 0; }
+.takeaway {
+  background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; font-size: 1.05rem;
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+.takeaway b { font-family: var(--font-code); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 560px) { .stats { grid-template-columns: minmax(0, 1fr); } }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; border-top: 4px solid var(--c); display: flex; flex-direction: column; gap: 2px; }
+.stat .nm { font-weight: 700; font-size: 0.9rem; }
+.stat .v { font: 600 1.25rem var(--font-code); font-variant-numeric: tabular-nums; }
+.stat .d { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mesh-wrap { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.mesh-wrap svg { width: 100%; max-width: 440px; height: auto; }
+.mesh-wrap svg .node { cursor: pointer; }
+.route-info { font: 0.95rem var(--font-code); text-align: center; font-variant-numeric: tabular-nums; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; }
+details summary { cursor: pointer; font-weight: 700; }
+details ul { margin: 8px 0 4px; padding-left: 20px; color: var(--muted); max-width: 95ch; }
+details li { margin-bottom: 4px; }
+code { font-family: var(--font-code); font-size: 0.92em; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1>Chiplet Tradeoffs Lab</h1>
+      <p class="sub">One 64-core CPU on a silicon interposer, built as 1, 2, 4, 8 or 16 chiplets</p>
+    </div>
+    <div class="kpick">
+      <span class="lbl" id="kLbl">Cores per chiplet</span>
+      <div class="seg" role="radiogroup" aria-labelledby="kLbl" id="kSeg"></div>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" id="tab-cost" aria-controls="view-cost" aria-selected="true">Yield &amp; cost<span class="pg">slides 9–10</span></button>
+    <button role="tab" id="tab-binning" aria-controls="view-binning" aria-selected="false">Speed binning<span class="pg">slide 11</span></button>
+    <button role="tab" id="tab-latency" aria-controls="view-latency" aria-selected="false">Cost vs latency<span class="pg">slide 12</span></button>
+  </nav>
+
+  <!-- ============ VIEW 1: YIELD & COST ============ -->
+  <section class="view" id="view-cost" role="tabpanel" aria-labelledby="tab-cost">
+    <div class="controls">
+      <div class="ctl"><label for="d0">Defect density <output id="d0o"></output></label><input type="range" id="d0" min="0.02" max="0.5" step="0.01" value="0.10"></div>
+      <div class="ctl"><label for="ca">Core area <output id="cao"></output></label><input type="range" id="ca" min="2" max="12" step="0.5" value="6"></div>
+      <div class="ctl"><label for="phy">Chiplet interface (PHY) area <output id="phyo"></output></label><input type="range" id="phy" min="0" max="10" step="0.5" value="1"></div>
+      <div class="ctl"><label for="bond">Bonding yield per chiplet <output id="bondo"></output></label><input type="range" id="bond" min="0.95" max="1" step="0.001" value="0.999"></div>
+      <div class="ctl"><label for="fixed">Interposer + package cost <output id="fixedo"></output></label><input type="range" id="fixed" min="0" max="300" step="5" value="50"></div>
+      <div class="ctl"><label for="wc">Wafer cost <output id="wco"></output></label><input type="range" id="wc" min="3000" max="20000" step="500" value="10000"></div>
+    </div>
+    <div class="stage">
+      <div class="card">
+        <h2>Same wafer, same defects, two ways to cut it <span class="hint">slide 10</span></h2>
+        <div class="wafers">
+          <div class="wafer"><canvas id="wMono" width="360" height="360" aria-label="Wafer of monolithic 64-core dies"></canvas><div class="cap" id="wMonoCap">Monolithic 64-core die</div><div class="cnt" id="wMonoCnt"></div></div>
+          <div class="wafer"><canvas id="wChip" width="360" height="360" aria-label="Wafer of chiplet dies"></canvas><div class="cap" id="wChipCap"></div><div class="cnt" id="wChipCnt"></div></div>
+        </div>
+        <div class="row" style="justify-content: space-between;">
+          <div class="legend">
+            <span><span class="sw" style="background: var(--die)"></span>good die</span>
+            <span><span class="sw" style="background: var(--die-bad)"></span>die hit by a defect</span>
+            <span><span class="sw" style="background: var(--defect); border-radius: 50%"></span>defect</span>
+          </div>
+          <button class="btn" id="resample">New wafer (new defects)</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Normalized cost per 64-core system <span class="hint">slide 9 · lower is better · click a point</span></h2>
+        <svg class="chart" id="costChart" role="img" aria-label="Normalized cost versus cores per chiplet"></svg>
+        <div class="takeaway" id="costTake"></div>
+        <div class="table-wrap"><table id="costTable"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VIEW 2: SPEED BINNING ============ -->
+  <section class="view" id="view-binning" role="tabpanel" aria-labelledby="tab-binning" hidden>
+    <div class="controls">
+      <div class="ctl"><label for="mu">Mean core speed (wafer center) <output id="muo"></output></label><input type="range" id="mu" min="2.0" max="3.4" step="0.05" value="2.8"></div>
+      <div class="ctl"><label for="sig">Random core-to-core variation σ <output id="sigo"></output></label><input type="range" id="sig" min="0" max="0.4" step="0.01" value="0.22"></div>
+      <div class="ctl"><label for="grad">Center-to-edge slowdown <output id="grado"></output></label><input type="range" id="grad" min="0" max="0.6" step="0.02" value="0.20"></div>
+      <div class="ctl"><label for="thr">Premium bin threshold <output id="thro"></output></label><input type="range" id="thr" min="1.8" max="3.2" step="0.1" value="2.4"></div>
+    </div>
+    <div class="stage">
+      <div class="card">
+        <h2>64-core systems per wafer, by clock speed <span class="hint">average of 30 wafers · system clock = slowest core</span></h2>
+        <svg class="chart" id="binChart" role="img" aria-label="Histogram of system clock speed"></svg>
+        <div class="row" style="justify-content: space-between;">
+          <div class="legend">
+            <span><span class="sw" style="background: var(--mono)"></span>Monolithic 64-core</span>
+            <span><span class="sw" style="background: var(--unsorted)"></span><span id="lgUn">Unsorted chiplets</span></span>
+            <span><span class="sw" style="background: var(--sorted)"></span><span id="lgSn">Sorted chiplets</span></span>
+          </div>
+          <button class="btn" id="rerun">Re-run 30 wafers</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Why sorting helps <span class="hint">slide 11</span></h2>
+        <div class="stats" id="binStats"></div>
+        <div class="takeaway" id="binTake"></div>
+        <svg class="chart" id="sortDemo" role="img" aria-label="Example of grouping chiplets with and without sorting"></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VIEW 3: COST VS LATENCY ============ -->
+  <section class="view" id="view-latency" role="tabpanel" aria-labelledby="tab-latency" hidden>
+    <div class="controls">
+      <div class="ctl"><label for="hop">Cycles per on-chip hop (router + link) <output id="hopo"></output></label><input type="range" id="hop" min="1" max="8" step="1" value="4"></div>
+      <div class="ctl"><label for="pen">Extra cycles per chiplet crossing <output id="peno"></output></label><input type="range" id="pen" min="0" max="20" step="1" value="3"></div>
+      <div class="ctl"><label for="base">Fixed cycles per message (inject + eject) <output id="baseo"></output></label><input type="range" id="base" min="0" max="30" step="1" value="8"></div>
+    </div>
+    <div class="stage">
+      <div class="card">
+        <h2>8×8 mesh of cores, cut into chiplets <span class="hint">click two cores to route a message</span></h2>
+        <div class="mesh-wrap">
+          <svg id="mesh" viewBox="0 0 440 440" role="img" aria-label="Mesh network partitioned into chiplets"></svg>
+          <div class="route-info" id="routeInfo"></div>
+          <button class="btn" id="randMsg">Random message</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Cost vs message latency <span class="hint">both normalized · lower is better · click a point</span></h2>
+        <svg class="chart" id="latChart" role="img" aria-label="Normalized cost and latency versus cores per chiplet"></svg>
+        <div class="takeaway" id="latTake"></div>
+        <div class="table-wrap"><table id="latTable"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <details>
+    <summary>Model assumptions</summary>
+    <ul>
+      <li><b>Wafer:</b> 300 mm, 3 mm edge exclusion. A die counts only if it lies fully inside the usable area. Scribe lines are ignored.</li>
+      <li><b>Dies:</b> cores sit on an 8×8 grid. Chiplets cut that grid into 8×4 (32 cores), 4×4 (16), 4×2 (8) or 2×2 (4) blocks. Each chiplet adds the interface (PHY) area for its interposer links.</li>
+      <li><b>Yield:</b> Poisson model, <code>Y = exp(−A·D₀)</code>. Defects on the wafer pictures are scattered uniformly, so the counts on screen vary around this expected value.</li>
+      <li><b>Cost per system:</b> <code>(n · wafer cost / (dies per wafer · Y) + interposer/package) / bond yieldⁿ</code>, where n = 64 / cores per chiplet. Chiplets are tested before assembly (known good die), so only bonding failures waste good silicon. The result is normalized to the monolithic die.</li>
+      <li><b>Speed binning:</b> each core's maximum clock is <code>μ − slowdown · (r/R)² + σ · N(0,1)</code>, where r is the core's distance from the wafer center. A die runs at the speed of its slowest core, and a system runs at the speed of its slowest chiplet. "Sorted" ranks good chiplets by speed and groups neighbors; "unsorted" groups them at random.</li>
+      <li><b>Latency:</b> uniform random traffic over all 64×63 source–destination pairs with XY routing. Latency = fixed cycles + hops × cycles per hop + chiplet crossings × crossing penalty. It is normalized to the most fragmented design.</li>
+      <li>Default values are chosen so the curves resemble the slides (Kannan, Enright Jerger and Loh, MICRO 2015). They are illustrative, not data for any real product.</li>
+    </ul>
+  </details>
+</div>
+
+<script id="model">
+// ---------- pure model (no DOM) ----------
+const KS = [64, 32, 16, 8, 4];
+const GEOM = { 64: { c: 8, r: 8 }, 32: { c: 4, r: 8 }, 16: { c: 4, r: 4 }, 8: { c: 2, r: 4 }, 4: { c: 2, r: 2 } };
+const R_WAFER = 150, EDGE = 3, R_USE = R_WAFER - EDGE;
+
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gaussFrom(rng) { let u = 0; while (u === 0) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
+
+function dieDims(k, p) {
+  const g = GEOM[k], s = Math.sqrt(p.coreArea);
+  let w = g.c * s, h = g.r * s;
+  if (k < 64 && p.phyArea > 0) { const f = Math.sqrt((w * h + p.phyArea) / (w * h)); w *= f; h *= f; }
+  return { w, h, area: w * h, cols: g.c, rows: g.r };
+}
+const posCache = new Map();
+function diePositions(w, h) {
+  const key = w.toFixed(4) + 'x' + h.toFixed(4);
+  if (posCache.has(key)) return posCache.get(key);
+  let best = null;
+  for (const ox of [0, w / 2]) for (const oy of [0, h / 2]) {
+    const list = [];
+    const nx = Math.ceil(R_USE / w) + 1, ny = Math.ceil(R_USE / h) + 1;
+    for (let i = -nx; i <= nx; i++) for (let j = -ny; j <= ny; j++) {
+      const x0 = ox + i * w, y0 = oy + j * h, x1 = x0 + w, y1 = y0 + h;
+      const fx = Math.max(Math.abs(x0), Math.abs(x1)), fy = Math.max(Math.abs(y0), Math.abs(y1));
+      if (fx * fx + fy * fy <= R_USE * R_USE) list.push([x0, y0]);
+    }
+    if (!best || list.length > best.length) best = list;
+  }
+  posCache.set(key, best);
+  return best;
+}
+function costFor(k, p) {
+  const n = 64 / k, d = dieDims(k, p), dpw = diePositions(d.w, d.h).length;
+  const Y = Math.exp(-d.area / 100 * p.D0);
+  const dieCost = p.waferCost / (dpw * Y);
+  const silicon = n * dieCost;
+  const asmY = Math.pow(p.bondYield, n);
+  const total = (silicon + p.fixed) / asmY;
+  return { k, n, d, dpw, Y, dieCost, silicon, asmY, total, goodPerWafer: dpw * Y, systemsPerWafer: dpw * Y / n };
+}
+function costCurve(p) {
+  const rows = KS.map(k => costFor(k, p));
+  const base = rows[0].total;
+  rows.forEach(r => r.norm = r.total / base);
+  return rows;
+}
+
+// Speed binning Monte Carlo: returns per-wafer average histograms
+const BIN_LO = 1.4, BIN_W = 0.1, NBINS = 22;
+function dieSpeeds(k, p, rng, Y) {
+  const d = dieDims(k, p), pos = diePositions(d.w, d.h), out = [];
+  const cw = d.w / d.cols, ch = d.h / d.rows, R2 = R_USE * R_USE;
+  for (const [x0, y0] of pos) {
+    if (rng() >= Y) continue; // defective die
+    let mn = Infinity;
+    for (let ci = 0; ci < d.cols; ci++) for (let ri = 0; ri < d.rows; ri++) {
+      const x = x0 + (ci + 0.5) * cw, y = y0 + (ri + 0.5) * ch;
+      const f = p.mu - p.grad * (x * x + y * y) / R2 + p.sigma * gaussFrom(rng);
+      if (f < mn) mn = f;
+    }
+    out.push(mn);
+  }
+  return out;
+}
+function binIndex(f) { return Math.max(0, Math.min(NBINS - 1, Math.floor((f - BIN_LO) / BIN_W + 1e-9))); }
+function binning(k, p, wafers, seed) {
+  const rng = mulberry32(seed);
+  const n = 64 / k;
+  const res = { mono: new Array(NBINS).fill(0), uns: new Array(NBINS).fill(0), srt: new Array(NBINS).fill(0), lists: { mono: [], uns: [], srt: [] }, example: null };
+  const Ym = Math.exp(-dieDims(64, p).area / 100 * p.D0), Yc = Math.exp(-dieDims(k, p).area / 100 * p.D0);
+  for (let w = 0; w < wafers; w++) {
+    for (const f of dieSpeeds(64, p, rng, Ym)) { res.mono[binIndex(f)]++; res.lists.mono.push(f); }
+    const chips = dieSpeeds(k, p, rng, Yc);
+    const shuffled = chips.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+    const sorted = chips.slice().sort((a, b) => b - a);
+    const groups = Math.floor(chips.length / n);
+    for (let g = 0; g < groups; g++) {
+      let mu = Infinity; for (let i = 0; i < n; i++) mu = Math.min(mu, shuffled[g * n + i]);
+      const ms = sorted[g * n + n - 1];
+      res.uns[binIndex(mu)]++; res.srt[binIndex(ms)]++; res.lists.uns.push(mu); res.lists.srt.push(ms);
+    }
+    if (w === 0) res.example = { shuffled: shuffled.slice(0, Math.min(chips.length, n * 3)), sorted };
+  }
+  for (const key of ['mono', 'uns', 'srt']) res[key] = res[key].map(v => v / wafers);
+  return res;
+}
+
+// Network latency over an 8x8 mesh with XY routing, uniform random traffic
+function latencyFor(k, q) {
+  const g = GEOM[k];
+  let hops = 0, cross = 0, cnt = 0;
+  for (let s = 0; s < 64; s++) for (let t = 0; t < 64; t++) {
+    if (s === t) continue;
+    const sx = s % 8, sy = s >> 3, tx = t % 8, ty = t >> 3;
+    hops += Math.abs(sx - tx) + Math.abs(sy - ty);
+    cross += Math.abs(Math.floor(sx / g.c) - Math.floor(tx / g.c)) + Math.abs(Math.floor(sy / g.r) - Math.floor(ty / g.r));
+    cnt++;
+  }
+  hops /= cnt; cross /= cnt;
+  return { k, hops, cross, lat: q.base + q.hop * hops + q.pen * cross };
+}
+</script>
+
+<script>
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const a in attrs) e.setAttribute(a, attrs[a]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const fmt = (v, d = 2) => v.toFixed(d);
+const pct = v => (v * 100).toFixed(1) + '%';
+const money = v => '$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+
+const state = { k: 16, view: 'cost', defectSeed: 7, binSeed: 11, src: 0, dst: 63 };
+
+// --- cores-per-chiplet selector ---
+const kSeg = $('kSeg');
+KS.forEach(k => {
+  const b = document.createElement('button');
+  b.setAttribute('role', 'radio'); b.textContent = k; b.dataset.k = k; b.id = 'k' + k;
+  b.title = k === 64 ? 'Monolithic: one 64-core die' : `${64 / k} chiplets × ${k} cores`;
+  b.addEventListener('click', () => setK(k));
+  kSeg.appendChild(b);
+});
+function setK(k) { state.k = k; renderAll(); }
+
+// --- sliders ---
+const sliders = {
+  d0: v => v.toFixed(2) + ' /cm²', ca: v => v.toFixed(1) + ' mm²', phy: v => v.toFixed(1) + ' mm²', bond: v => (v * 100).toFixed(1) + '%',
+  fixed: v => '$' + v.toFixed(0), wc: v => '$' + v.toLocaleString(),
+  mu: v => v.toFixed(2) + ' GHz', sig: v => v.toFixed(2) + ' GHz', grad: v => v.toFixed(2) + ' GHz', thr: v => '≥ ' + v.toFixed(1) + ' GHz',
+  hop: v => v + ' cyc', pen: v => v + ' cyc', base: v => v + ' cyc'
+};
+const val = id => parseFloat($(id).value);
+for (const id in sliders) {
+  $(id).addEventListener('input', () => { $(id + 'o').textContent = sliders[id](val(id)); renderAll(id); });
+  $(id + 'o').textContent = sliders[id](val(id));
+}
+function costParams() { return { D0: val('d0'), coreArea: val('ca'), phyArea: val('phy'), bondYield: val('bond'), fixed: val('fixed'), waferCost: val('wc') }; }
+function binParams() { return Object.assign(costParams(), { mu: val('mu'), sigma: val('sig'), grad: val('grad') }); }
+function latParams() { return { hop: val('hop'), pen: val('pen'), base: val('base') }; }
+
+// --- tabs + hash routing ---
+const VIEWS = ['cost', 'binning', 'latency'];
+VIEWS.forEach(v => $('tab-' + v).addEventListener('click', () => { location.hash = v; showView(v); }));
+function showView(v) {
+  if (!VIEWS.includes(v)) v = 'cost';
+  state.view = v;
+  VIEWS.forEach(x => { $('view-' + x).hidden = x !== v; $('tab-' + x).setAttribute('aria-selected', x === v); });
+  renderAll();
+}
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+
+// ---------- generic line chart ----------
+const MARK = { square: (g, x, y, c) => el('rect', { x: x - 5, y: y - 5, width: 10, height: 10, fill: c }, g),
+  tri: (g, x, y, c) => el('path', { d: `M${x},${y - 7} L${x + 6.5},${y + 5} L${x - 6.5},${y + 5} Z`, fill: c }, g),
+  circle: (g, x, y, c) => el('circle', { cx: x, cy: y, r: 5, fill: c }, g) };
+function niceRange(vals, pad = 0.03) {
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  lo = Math.floor((lo - pad) * 20) / 20; hi = Math.ceil((hi + pad) * 20) / 20;
+  if (hi - lo < 0.2) lo = hi - 0.2;
+  return [Math.max(0, lo), hi];
+}
+function lineChart(svg, opt) {
+  const W = 560, H = 330, m = { l: 58, r: 16, t: 16, b: 48 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = '';
+  const pw = W - m.l - m.r, ph = H - m.t - m.b, n = opt.labels.length;
+  const X = i => m.l + (i + 0.5) * pw / n;
+  const [y0, y1] = opt.yRange;
+  const Y = v => m.t + ph - (v - y0) / (y1 - y0) * ph;
+  const step = (y1 - y0) > 0.6 ? 0.2 : (y1 - y0) > 0.3 ? 0.1 : 0.05;
+  if (opt.sel != null) el('rect', { class: 'selband', x: m.l + opt.sel * pw / n, y: m.t, width: pw / n, height: ph }, svg);
+  for (let v = Math.ceil(y0 / step - 1e-9) * step; v <= y1 + 1e-9; v += step) {
+    el('line', { class: 'grid', x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, svg);
+    el('text', { x: m.l - 8, y: Y(v) + 4, 'text-anchor': 'end' }, svg, v.toFixed(2));
+  }
+  opt.labels.forEach((lab, i) => el('text', { x: X(i), y: H - m.b + 20, 'text-anchor': 'middle', style: i === opt.sel ? 'fill: var(--fg); font-weight: 700' : '' }, svg, lab));
+  el('text', { class: 'axis-title', x: m.l + pw / 2, y: H - 8, 'text-anchor': 'middle' }, svg, opt.xTitle);
+  el('text', { class: 'axis-title', x: 14, y: m.t + ph / 2, transform: `rotate(-90 14 ${m.t + ph / 2})`, 'text-anchor': 'middle' }, svg, opt.yTitle);
+  opt.series.forEach(s => {
+    const color = css(s.color);
+    el('path', { d: s.values.map((v, i) => (i ? 'L' : 'M') + X(i) + ',' + Y(v)).join(' '), fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-dasharray': s.dash || '' }, svg);
+    const g = el('g', {}, svg);
+    s.values.forEach((v, i) => MARK[s.mark](g, X(i), Y(v), color));
+    if (opt.sel != null) {
+      const v = s.values[opt.sel];
+      el('text', { x: X(opt.sel) + 9, y: Y(v) + (s.labelDy || -8), style: `fill: ${color}; font-weight: 700; font-family: var(--font-code)` }, svg, v.toFixed(2));
+    }
+  });
+  // legend
+  let lx = W - m.r - 8, ly = m.t + 14;
+  opt.series.slice().reverse().forEach(s => {
+    const t = el('text', { x: lx, y: ly, 'text-anchor': 'end', style: 'fill: var(--fg)' }, svg, s.name);
+    const w = t.getComputedTextLength ? t.getComputedTextLength() : s.name.length * 7;
+    el('line', { x1: lx - w - 30, x2: lx - w - 8, y1: ly - 4, y2: ly - 4, stroke: css(s.color), 'stroke-width': 2.5, 'stroke-dasharray': s.dash || '' }, svg);
+    MARK[s.mark](svg, lx - w - 19, ly - 4, css(s.color));
+    lx -= w + 46;
+  });
+  opt.labels.forEach((lab, i) => {
+    const r = el('rect', { class: 'col', x: m.l + i * pw / n, y: m.t, width: pw / n, height: ph }, svg);
+    el('title', {}, r, opt.colTitle(i));
+    r.addEventListener('click', () => opt.onSelect(i));
+  });
+}
+
+// ---------- VIEW 1: wafers + cost ----------
+function makeDefects(p) {
+  const rng = mulberry32(state.defectSeed);
+  const lambda = p.D0 * Math.PI * R_USE * R_USE / 100;
+  // Poisson sample (normal approx for large lambda)
+  const nDef = Math.max(0, Math.round(lambda + Math.sqrt(lambda) * gaussFrom(rng)));
+  const pts = [];
+  for (let i = 0; i < nDef; i++) { const r = R_USE * Math.sqrt(rng()), a = 2 * Math.PI * rng(); pts.push([r * Math.cos(a), r * Math.sin(a)]); }
+  return pts;
+}
+function drawWafer(canvas, k, p, defects) {
+  const dpr = window.devicePixelRatio || 1;
+  const size = Math.max(200, canvas.clientWidth || 360);
+  if (canvas.width !== Math.round(size * dpr)) { canvas.width = Math.round(size * dpr); canvas.height = Math.round(size * dpr); }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+  const s = (size / 2 - 4) / R_WAFER, cx = size / 2, cy = size / 2;
+  const P = (x, y) => [cx + x * s, cy - y * s];
+  ctx.fillStyle = css('--wafer'); ctx.strokeStyle = css('--wafer-edge'); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, R_WAFER * s, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  // notch
+  ctx.fillStyle = css('--bg'); ctx.beginPath(); ctx.arc(cx, cy + R_WAFER * s, 5, 0, 2 * Math.PI); ctx.fill();
+  const d = dieDims(k, p), pos = diePositions(d.w, d.h);
+  const bad = new Uint8Array(pos.length);
+  for (const [x, y] of defects) {
+    for (let i = 0; i < pos.length; i++) { const [x0, y0] = pos[i]; if (x >= x0 && x < x0 + d.w && y >= y0 && y < y0 + d.h) { bad[i] = 1; break; } }
+  }
+  const cPix = d.w / d.cols * s;
+  const gap = Math.min(1, d.w * s * 0.08);
+  pos.forEach(([x0, y0], i) => {
+    const [px, py] = P(x0, y0 + d.h);
+    ctx.fillStyle = css(bad[i] ? '--die-bad' : '--die');
+    ctx.fillRect(px + gap / 2, py + gap / 2, d.w * s - gap, d.h * s - gap);
+    if (cPix > 4.5 && !bad[i]) {
+      ctx.strokeStyle = css('--die-edge'); ctx.globalAlpha = 0.45; ctx.lineWidth = 0.6; ctx.beginPath();
+      for (let c = 1; c < d.cols; c++) { const xx = px + c * d.w / d.cols * s; ctx.moveTo(xx, py + gap); ctx.lineTo(xx, py + d.h * s - gap); }
+      for (let r = 1; r < d.rows; r++) { const yy = py + r * d.h / d.rows * s; ctx.moveTo(px + gap, yy); ctx.lineTo(px + d.w * s - gap, yy); }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    if (bad[i] && d.w * s > 7) {
+      ctx.strokeStyle = css('--die-bad-edge'); ctx.lineWidth = 1.5; ctx.beginPath();
+      const m = Math.min(d.w, d.h) * s * 0.22;
+      ctx.moveTo(px + m, py + m); ctx.lineTo(px + d.w * s - m, py + d.h * s - m);
+      ctx.moveTo(px + d.w * s - m, py + m); ctx.lineTo(px + m, py + d.h * s - m); ctx.stroke();
+    }
+  });
+  ctx.fillStyle = css('--defect');
+  for (const [x, y] of defects) { const [px, py] = P(x, y); ctx.beginPath(); ctx.arc(px, py, 2, 0, 2 * Math.PI); ctx.fill(); }
+  const good = pos.length - bad.reduce((a, b) => a + b, 0);
+  return { total: pos.length, good };
+}
+function renderCost() {
+  const p = costParams(), k = state.k, n = 64 / k;
+  const defects = makeDefects(p);
+  const wm = drawWafer($('wMono'), 64, p, defects);
+  const wc = drawWafer($('wChip'), k, p, defects);
+  const sysM = wm.good, sysC = Math.floor(wc.good / n);
+  $('wMonoCnt').innerHTML = `${wm.good} of ${wm.total} dies good<br><b>${sysM}</b> 64-core systems`;
+  $('wChipCap').textContent = k === 64 ? 'Monolithic 64-core die' : `${k}-core chiplet (×${n} per system)`;
+  $('wChipCnt').innerHTML = `${wc.good} of ${wc.total} dies good<br><b>${sysC}</b> 64-core systems`;
+
+  const rows = costCurve(p), si = KS.indexOf(k);
+  lineChart($('costChart'), {
+    labels: KS.map(String), xTitle: 'Cores per chip', yTitle: 'Normalized cost',
+    yRange: niceRange([...rows.map(r => r.norm), 1]), sel: si,
+    series: [{ name: 'Cost', color: '--mono', values: rows.map(r => r.norm), mark: 'square' }],
+    colTitle: i => `${KS[i]} cores per chip: cost ${rows[i].norm.toFixed(3)}`, onSelect: i => setK(KS[i])
+  });
+  const r = rows[si], m = rows[0];
+  const best = rows.reduce((a, b) => b.norm < a.norm ? b : a);
+  $('costTake').innerHTML = k === 64
+    ? `Pick a chiplet size to compare. The cheapest option here is <b>${best.k}-core</b> chiplets at <b>${best.norm.toFixed(2)}×</b>.`
+    : `${n} × ${k}-core chiplets cost <b>${r.norm.toFixed(2)}×</b> the monolithic die (${r.norm < 1 ? 'save ' + pct(1 - r.norm) : 'pay ' + pct(r.norm - 1) + ' more'}).`;
+  const T = $('costTable');
+  const line = (name, a, b, cls = '') => `<tr class="${cls}"><td>${name}</td><td class="num">${a}</td><td class="num">${b}</td></tr>`;
+  T.innerHTML = `<thead><tr><th></th><th>Monolithic</th><th>${k === 64 ? 'Monolithic' : k + '-core chiplet'}</th></tr></thead><tbody>` +
+    line('Die area', m.d.area.toFixed(0) + ' mm²', r.d.area.toFixed(1) + ' mm²') +
+    line('Dies per wafer', m.dpw, r.dpw) +
+    line('Die yield', pct(m.Y), pct(r.Y)) +
+    line('64-core systems per wafer (expected)', m.systemsPerWafer.toFixed(0), r.systemsPerWafer.toFixed(0)) +
+    line('Silicon cost per system', money(m.silicon), money(r.silicon)) +
+    line('+ interposer &amp; package', money(p.fixed), money(p.fixed)) +
+    line('÷ assembly yield', pct(m.asmY), pct(r.asmY)) +
+    line('Cost per good system', money(m.total), money(r.total), 'total') + '</tbody>';
+}
+
+// ---------- VIEW 2: binning ----------
+let binCache = { key: '', res: null };
+function renderBinning() {
+  const p = binParams(), k = state.k, n = 64 / k, thr = val('thr');
+  const key = JSON.stringify([p, k, state.binSeed]);
+  if (binCache.key !== key) binCache = { key, res: binning(k, p, 30, state.binSeed) };
+  const res = binCache.res;
+  const svg = $('binChart');
+  const W = 620, H = 330, m = { l: 52, r: 12, t: 14, b: 50 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = '';
+  const pw = W - m.l - m.r, ph = H - m.t - m.b, bw = pw / NBINS;
+  const ymax = Math.max(5, ...res.mono, ...res.uns, ...res.srt);
+  const step = ymax > 120 ? 40 : ymax > 60 ? 20 : ymax > 25 ? 10 : 5;
+  const top = Math.ceil(ymax / step) * step;
+  const Y = v => m.t + ph - v / top * ph;
+  // premium region
+  const tx = m.l + (thr - BIN_LO) / BIN_W * bw;
+  el('rect', { x: tx, y: m.t, width: Math.max(0, W - m.r - tx), height: ph, class: 'selband' }, svg);
+  for (let v = 0; v <= top; v += step) { el('line', { class: 'grid', x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, svg); el('text', { x: m.l - 6, y: Y(v) + 4, 'text-anchor': 'end' }, svg, v); }
+  const series = [['mono', '--mono'], ['uns', '--unsorted'], ['srt', '--sorted']];
+  const sub = bw * 0.27;
+  for (let b = 0; b < NBINS; b++) {
+    series.forEach(([s, c], j) => {
+      const v = res[s][b]; if (v <= 0) return;
+      const r = el('rect', { x: m.l + b * bw + bw * 0.095 + j * sub, y: Y(v), width: sub - 0.5, height: m.t + ph - Y(v), fill: css(c) }, svg);
+      el('title', {}, r, `${(BIN_LO + b * BIN_W).toFixed(1)}–${(BIN_LO + (b + 1) * BIN_W).toFixed(1)} GHz: ${v.toFixed(1)} systems/wafer`);
+    });
+    if (b % 2 === 0) el('text', { x: m.l + b * bw + bw / 2, y: H - m.b + 18, 'text-anchor': 'middle' }, svg, (BIN_LO + b * BIN_W).toFixed(1));
+  }
+  el('line', { x1: tx, x2: tx, y1: m.t, y2: m.t + ph, stroke: css('--accent'), 'stroke-width': 2, 'stroke-dasharray': '5 4' }, svg);
+  el('text', { x: tx + 6, y: m.t + 14, style: 'fill: var(--accent); font-weight: 700' }, svg, 'premium bin →');
+  el('text', { class: 'axis-title', x: m.l + pw / 2, y: H - 8, 'text-anchor': 'middle' }, svg, 'Clock speed of the 64-core system (GHz, bin start)');
+  el('text', { class: 'axis-title', x: 13, y: m.t + ph / 2, transform: `rotate(-90 13 ${m.t + ph / 2})`, 'text-anchor': 'middle' }, svg, 'Systems per wafer');
+
+  const lbl = k === 64 ? 'monolithic' : `${n} × ${k}-core`;
+  $('lgUn').textContent = `Unsorted ${lbl}`; $('lgSn').textContent = `Sorted ${lbl}`;
+  const summ = list => {
+    const cnt = list.length / 30, mean = list.reduce((a, b) => a + b, 0) / Math.max(1, list.length);
+    const prem = list.filter(f => f >= thr - 1e-9).length / 30;
+    return { cnt, mean, prem };
+  };
+  const S = { mono: summ(res.lists.mono), uns: summ(res.lists.uns), srt: summ(res.lists.srt) };
+  const card = (name, c, s) => `<div class="stat" style="--c: var(${c})"><span class="nm">${name}</span><span class="v">${s.prem.toFixed(1)}</span><span class="d">premium systems / wafer</span><span class="d">${s.cnt.toFixed(1)} systems total · mean ${s.mean.toFixed(2)} GHz</span></div>`;
+  $('binStats').innerHTML = card('Monolithic', '--mono', S.mono) + card('Unsorted', '--unsorted', S.uns) + card('Sorted', '--sorted', S.srt);
+  $('binTake').innerHTML = k === 64
+    ? 'With one 64-core die there is nothing to sort. Pick a chiplet size.'
+    : `Sorting turns <b>${S.uns.prem.toFixed(1)}</b> premium systems per wafer into <b>${S.srt.prem.toFixed(1)}</b> (monolithic: <b>${S.mono.prem.toFixed(1)}</b>).`;
+  drawSortDemo(res, n);
+}
+function drawSortDemo(res, n) {
+  const svg = $('sortDemo');
+  const W = 560, H = 190; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = '';
+  if (n === 1) { el('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle' }, svg, 'One die per system: no grouping to show.'); return; }
+  const ex = res.example, groups = 3;
+  const uns = [], srt = [];
+  for (let g = 0; g < groups; g++) uns.push(ex.shuffled.slice(g * n, g * n + n));
+  // sorted: fastest group, a middle group, slowest group
+  const G = Math.floor(ex.sorted.length / n);
+  [0, Math.floor(G / 2), G - 1].forEach(g => srt.push(ex.sorted.slice(g * n, g * n + n)));
+  const lo = 1.6, hi = 3.3;
+  const color = f => { const t = Math.max(0, Math.min(1, (f - lo) / (hi - lo))); return `hsl(${(t * 120).toFixed(0)} 60% ${css('--bg').startsWith('#0') ? 40 : 50}%)`; };
+  const rowH = 22, colW = Math.min(18, 210 / n);
+  const block = (x0, title, arr, labels) => {
+    el('text', { x: x0, y: 16, class: 'axis-title' }, svg, title);
+    arr.forEach((grp, gi) => {
+      const y = 30 + gi * (rowH + 30);
+      el('text', { x: x0, y: y + 10, style: 'font-size: 12px' }, svg, labels[gi]);
+      grp.forEach((f, i) => { const r = el('rect', { x: x0 + i * colW, y: y + 16, width: colW - 2, height: rowH, rx: 2, fill: color(f) }, svg); el('title', {}, r, f.toFixed(2) + ' GHz'); });
+      const mn = Math.min(...grp);
+      el('text', { x: x0 + n * colW + 6, y: y + 32, style: 'fill: var(--fg); font-family: var(--font-code); font-weight: 700; font-size: 13px' }, svg, mn.toFixed(2));
+    });
+  };
+  block(4, 'Random groups', uns, ['system A', 'system B', 'system C']);
+  block(W / 2 + 4, 'Sorted groups', srt, ['fastest system', 'middle system', 'slowest system']);
+  el('text', { x: W / 2, y: H - 4, 'text-anchor': 'middle', style: 'font-size: 12px' }, svg, `Each square is one chiplet (red = slow, green = fast). Number = system clock in GHz.`);
+}
+
+// ---------- VIEW 3: latency ----------
+function renderLatency() {
+  const q = latParams(), p = costParams(), k = state.k, si = KS.indexOf(k);
+  const lats = KS.map(kk => latencyFor(kk, q));
+  const lmax = Math.max(...lats.map(l => l.lat));
+  const costs = costCurve(p).map(r => r.norm);
+  const latN = lats.map(l => l.lat / lmax);
+  const prod = costs.map((c, i) => c * latN[i]);
+  lineChart($('latChart'), {
+    labels: KS.map(String), xTitle: 'Cores per chip', yTitle: 'Cost / message latency (norm.)',
+    yRange: niceRange([...costs, ...latN, ...prod]), sel: si,
+    series: [
+      { name: 'Cost', color: '--mono', values: costs, mark: 'square' },
+      { name: 'Latency', color: '--lat', values: latN, mark: 'tri', labelDy: 16 },
+      { name: 'Cost × latency', color: '--prod', values: prod, mark: 'circle', dash: '6 4', labelDy: 16 }
+    ],
+    colTitle: i => `${KS[i]} cores per chip`, onSelect: i => setK(KS[i])
+  });
+  const bi = prod.indexOf(Math.min(...prod));
+  $('latTake').innerHTML = `Cheapest: <b>${KS[costs.indexOf(Math.min(...costs))]}-core</b> chiplets. Lowest latency: <b>${KS[latN.indexOf(Math.min(...latN))] === 64 ? 'monolithic' : KS[latN.indexOf(Math.min(...latN))] + '-core'}</b>. Best cost × latency: <b>${KS[bi] === 64 ? 'monolithic' : KS[bi] + '-core'}</b>.`;
+  const T = $('latTable');
+  T.innerHTML = '<thead><tr><th>Cores per chip</th>' + KS.map(kk => `<th>${kk}</th>`).join('') + '</tr></thead><tbody>' +
+    `<tr><td>Avg hops</td>${lats.map(l => `<td class="num">${l.hops.toFixed(2)}</td>`).join('')}</tr>` +
+    `<tr><td>Avg chiplet crossings</td>${lats.map(l => `<td class="num">${l.cross.toFixed(2)}</td>`).join('')}</tr>` +
+    `<tr class="total"><td>Avg latency (cycles)</td>${lats.map(l => `<td class="num">${l.lat.toFixed(1)}</td>`).join('')}</tr></tbody>`;
+  drawMesh(q);
+}
+function drawMesh(q) {
+  const svg = $('mesh'); svg.innerHTML = '';
+  const k = state.k, g = GEOM[k], pitch = 50, off = 45, size = 440;
+  const C = i => off + i * pitch;
+  // interposer
+  el('rect', { x: 4, y: 4, width: size - 8, height: size - 8, rx: 8, fill: css('--wafer'), stroke: css('--wafer-edge') }, svg);
+  // chiplets
+  for (let cx = 0; cx < 8 / g.c; cx++) for (let cy = 0; cy < 8 / g.r; cy++) {
+    el('rect', { x: C(cx * g.c) - 20, y: C(cy * g.r) - 20, width: (g.c - 1) * pitch + 40, height: (g.r - 1) * pitch + 40, rx: 5, fill: css('--accent-soft'), stroke: css('--die-edge'), 'stroke-width': 2 }, svg);
+  }
+  // links
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    if (x < 7) { const cross = Math.floor(x / g.c) !== Math.floor((x + 1) / g.c); el('line', { x1: C(x), y1: C(y), x2: C(x + 1), y2: C(y), stroke: css(cross ? '--hbm' : '--line-strong'), 'stroke-width': cross ? 2.5 : 1.2, 'stroke-dasharray': cross ? '4 3' : '' }, svg); }
+    if (y < 7) { const cross = Math.floor(y / g.r) !== Math.floor((y + 1) / g.r); el('line', { x1: C(x), y1: C(y), x2: C(x), y2: C(y + 1), stroke: css(cross ? '--hbm' : '--line-strong'), 'stroke-width': cross ? 2.5 : 1.2, 'stroke-dasharray': cross ? '4 3' : '' }, svg); }
+  }
+  // route (XY)
+  const sx = state.src % 8, sy = state.src >> 3, tx = state.dst % 8, ty = state.dst >> 3;
+  const path = [[sx, sy]]; let x = sx, y = sy;
+  while (x !== tx) { x += Math.sign(tx - x); path.push([x, y]); }
+  while (y !== ty) { y += Math.sign(ty - y); path.push([x, y]); }
+  let crossings = 0;
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1], [bx, by] = path[i];
+    const cr = Math.floor(ax / g.c) !== Math.floor(bx / g.c) || Math.floor(ay / g.r) !== Math.floor(by / g.r);
+    if (cr) crossings++;
+    el('line', { x1: C(ax), y1: C(ay), x2: C(bx), y2: C(by), stroke: css(cr ? '--sorted' : '--lat'), 'stroke-width': cr ? 6 : 4.5, 'stroke-linecap': 'round' }, svg);
+  }
+  // nodes
+  for (let i = 0; i < 64; i++) {
+    const nx = i % 8, ny = i >> 3, isS = i === state.src, isD = i === state.dst;
+    const c = el('circle', { class: 'node', cx: C(nx), cy: C(ny), r: isS || isD ? 11 : 8, fill: css(isS ? '--lat' : isD ? '--panel' : '--die'), stroke: css(isS || isD ? '--lat' : '--die-edge'), 'stroke-width': isS || isD ? 3 : 1.2, tabindex: 0 }, svg);
+    el('title', {}, c, `core ${i}`);
+    c.addEventListener('click', () => pickNode(i));
+    c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickNode(i); } });
+  }
+  el('text', { x: C(sx), y: C(sy) + 4, 'text-anchor': 'middle', style: 'fill: var(--panel); font-weight: 700; font-size: 11px; pointer-events: none' }, svg, 'S');
+  el('text', { x: C(tx), y: C(ty) + 4, 'text-anchor': 'middle', style: 'fill: var(--lat); font-weight: 700; font-size: 11px; pointer-events: none' }, svg, 'D');
+  const hops = path.length - 1, lat = q.base + q.hop * hops + q.pen * crossings;
+  $('routeInfo').innerHTML = `${hops} hops × ${q.hop} + <span style="color: var(--sorted); font-weight: 700">${crossings} crossings</span> × ${q.pen} + ${q.base} = <b>${lat} cycles</b>`;
+}
+let pickPhase = 0;
+function pickNode(i) {
+  if (pickPhase === 0) { state.src = i; state.dst = i; pickPhase = 1; } else { state.dst = i; pickPhase = 0; }
+  drawMesh(latParams());
+}
+$('randMsg').addEventListener('click', () => { state.src = Math.floor(Math.random() * 64); do { state.dst = Math.floor(Math.random() * 64); } while (state.dst === state.src); pickPhase = 0; drawMesh(latParams()); });
+$('resample').addEventListener('click', () => { state.defectSeed = (state.defectSeed * 7919 + 13) >>> 0; renderCost(); });
+$('rerun').addEventListener('click', () => { state.binSeed = (state.binSeed * 104729 + 7) >>> 0; renderBinning(); });
+
+// ---------- render loop ----------
+let pending = 0;
+function renderAll() {
+  KS.forEach(k => $('k' + k).setAttribute('aria-checked', k === state.k));
+  cancelAnimationFrame(pending);
+  pending = requestAnimationFrame(() => {
+    if (state.view === 'cost') renderCost();
+    else if (state.view === 'binning') renderBinning();
+    else renderLatency();
+  });
+}
+window.addEventListener('resize', () => { if (state.view === 'cost') renderAll(); });
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderAll);
+new MutationObserver(renderAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+showView(location.hash.slice(1) || 'cost');
+</script>
