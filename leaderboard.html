@@ -19,52 +19,56 @@ code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:0.92em
 .note { color:var(--muted); font-size:0.88em; }
 </style></head><body><main>
 <h1>CS/EE217 Final Project Leaderboard</h1>
-<p class='meta'>Updated 2026-11-23 11:08. Speedup is the baseline's total time divided by the team's, both summed over the timed cases (median of several runs each), measured by the same script.</p>
+<p class='meta'>Updated 2026-11-24 01:43. Speedup is the baseline's total time divided by the team's, both summed over the timed cases (median of several runs each), measured by the same script.</p>
 <h2>CNN inference <span class='note'>(cnn)</span></h2>
-<p class='meta'>Baseline: 123.02 s, measured 2026-11-23 11:08.</p>
+<p class='meta'>Baseline: 116.82 s, measured 2026-11-24 01:43.</p>
 <div class='wrap'><table><thead><tr><th>Rank</th><th>Team</th><th>Speedup</th><th>Time</th><th>Commit</th><th>Measured</th><th>Status</th></tr></thead><tbody>
-<tr><td class='num'>1</td><td>group-11</td><td class='num'>223.30&times;</td><td class='num'>0.551 s</td><td><code>5db3b92f</code></td><td>2026-11-23 11:08</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>1</td><td>group-11</td><td class='num'>224.14&times;</td><td class='num'>0.521 s</td><td><code>ad8c45fe</code></td><td>2026-11-24 01:43</td><td><span class='s-ok'>ok</span></td></tr>
 <tr><td class='num'>2</td><td>Group 1</td><td class='num'>1.00&times;</td><td class='num'>119.393 s</td><td><code>a544eea2</code></td><td>2026-11-15 11:09</td><td><span class='s-ok'>ok</span></td></tr>
 </tbody></table></div>
 <h2>Graph search <span class='note'>(graph)</span></h2>
-<p class='meta'>Baseline: 71.84 s, measured 2026-11-23 11:01.</p>
+<p class='meta'>Baseline: 75.37 s, measured 2026-11-24 01:37.</p>
 <div class='wrap'><table><thead><tr><th>Rank</th><th>Team</th><th>Speedup</th><th>Time</th><th>Commit</th><th>Measured</th><th>Status</th></tr></thead><tbody>
-<tr><td class='num'>1</td><td>group-11</td><td class='num'>221.32&times;</td><td class='num'>0.325 s</td><td><code>5db3b92f</code></td><td>2026-11-23 11:01</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>1</td><td>group-11</td><td class='num'>236.02&times;</td><td class='num'>0.319 s</td><td><code>ad8c45fe</code></td><td>2026-11-24 01:37</td><td><span class='s-ok'>ok</span></td></tr>
 <tr><td class='num'>2</td><td>Group 1</td><td class='num'>1.04&times;</td><td class='num'>80.356 s</td><td><code>a544eea2</code></td><td>2026-11-15 11:24</td><td><span class='s-ok'>ok</span></td></tr>
 </tbody></table></div>
 <h2>Image pipeline <span class='note'>(imgpipe)</span></h2>
-<p class='meta'>Baseline: 104.67 s, measured 2026-11-21 01:07.</p>
+<p class='meta'>Baseline: 104.21 s, measured 2026-11-24 01:07.</p>
 <div class='wrap'><table><thead><tr><th>Rank</th><th>Team</th><th>Speedup</th><th>Time</th><th>Commit</th><th>Measured</th><th>Status</th></tr></thead><tbody>
-<tr><td class='num'>1</td><td>group-11</td><td class='num'>129.01&times;</td><td class='num'>0.811 s</td><td><code>5db3b92f</code></td><td>2026-11-21 01:07</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>1</td><td>group-11</td><td class='num'>123.19&times;</td><td class='num'>0.846 s</td><td><code>ad8c45fe</code></td><td>2026-11-24 01:07</td><td><span class='s-ok'>ok</span></td></tr>
 <tr><td class='num'>2</td><td>Group 1</td><td class='num'>0.98&times;</td><td class='num'>106.361 s</td><td><code>a544eea2</code></td><td>2026-11-15 13:00</td><td><span class='s-ok'>ok</span></td></tr>
 </tbody></table></div>
 <h2>N-body <span class='note'>(nbody)</span></h2>
-<p class='meta'>Baseline: 165.11 s, measured 2026-11-23 11:00.</p>
+<p class='meta'>Baseline: 164.19 s, measured 2026-11-24 01:17.</p>
 <div class='wrap'><table><thead><tr><th>Rank</th><th>Team</th><th>Speedup</th><th>Time</th><th>Commit</th><th>Measured</th><th>Status</th></tr></thead><tbody>
-<tr><td class='num'>1</td><td>group-11</td><td class='num'>54.66&times;</td><td class='num'>3.026 s</td><td><code>5db3b92f</code></td><td>2026-11-21 01:16</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>2</td><td>group-6</td><td class='num'>29.80&times;</td><td class='num'>5.541 s</td><td><code>37f464e2</code></td><td>2026-11-23 11:00</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>3</td><td>group-5</td><td class='num'>3.46&times;</td><td class='num'>47.226 s</td><td><code>14cc821b</code></td><td>2026-11-19 01:18</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>4</td><td>group-4</td><td class='num'>1.01&times;</td><td class='num'>163.202 s</td><td><code>08907658</code></td><td>2026-11-17 01:28</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>5</td><td>group-3</td><td class='num'>1.01&times;</td><td class='num'>163.667 s</td><td><code>a41e9711</code></td><td>2026-11-17 01:19</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>6</td><td>group-12</td><td class='num'>1.01&times;</td><td class='num'>163.594 s</td><td><code>b90be65d</code></td><td>2026-11-18 01:35</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>7</td><td>group-18</td><td class='num'>1.01&times;</td><td class='num'>164.590 s</td><td><code>e1fe86bd</code></td><td>2026-11-20 00:08</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>8</td><td>group-20</td><td class='num'>1.01&times;</td><td class='num'>164.865 s</td><td><code>bcb935f1</code></td><td>2026-11-20 00:17</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>9</td><td>group-17</td><td class='num'>1.00&times;</td><td class='num'>164.997 s</td><td><code>c2e98e55</code></td><td>2026-11-19 23:59</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>10</td><td>group-21</td><td class='num'>1.00&times;</td><td class='num'>165.125 s</td><td><code>0bda876e</code></td><td>2026-11-20 00:20</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>11</td><td>group-15</td><td class='num'>1.00&times;</td><td class='num'>165.392 s</td><td><code>757aaebf</code></td><td>2026-11-19 23:49</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>12</td><td>group-16</td><td class='num'>1.00&times;</td><td class='num'>165.652 s</td><td><code>d8619c8b</code></td><td>2026-11-19 23:59</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>13</td><td>group-19</td><td class='num'>1.00&times;</td><td class='num'>165.710 s</td><td><code>b6adc0d7</code></td><td>2026-11-20 00:10</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>14</td><td>group-2</td><td class='num'>1.00&times;</td><td class='num'>165.563 s</td><td><code>ed829818</code></td><td>2026-11-17 01:19</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>15</td><td>group-8</td><td class='num'>1.00&times;</td><td class='num'>165.073 s</td><td><code>3b9dd2dc</code></td><td>2026-11-18 01:26</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>16</td><td>group-13</td><td class='num'>1.00&times;</td><td class='num'>165.223 s</td><td><code>838b891a</code></td><td>2026-11-18 01:36</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>17</td><td>Group 1</td><td class='num'>1.00&times;</td><td class='num'>164.864 s</td><td><code>a544eea2</code></td><td>2026-11-15 12:41</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>18</td><td>group-7</td><td class='num'>0.99&times;</td><td class='num'>165.661 s</td><td><code>dc62e199</code></td><td>2026-11-18 01:17</td><td><span class='s-ok'>ok</span></td></tr>
-<tr><td class='num'>19</td><td>group-14</td><td class='num'>0.99&times;</td><td class='num'>165.860 s</td><td><code>3b8347f9</code></td><td>2026-11-18 01:45</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>1</td><td>group-11</td><td class='num'>55.21&times;</td><td class='num'>2.974 s</td><td><code>ad8c45fe</code></td><td>2026-11-24 01:27</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>2</td><td>group-24</td><td class='num'>40.15&times;</td><td class='num'>4.090 s</td><td><code>83f7b603</code></td><td>2026-11-24 01:26</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>3</td><td>group-6</td><td class='num'>36.72&times;</td><td class='num'>4.472 s</td><td><code>a832fc0d</code></td><td>2026-11-24 01:17</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>4</td><td>group-21</td><td class='num'>14.55&times;</td><td class='num'>11.286 s</td><td><code>3c5e9f0a</code></td><td>2026-11-24 01:17</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>5</td><td>group-5</td><td class='num'>3.46&times;</td><td class='num'>47.226 s</td><td><code>14cc821b</code></td><td>2026-11-19 01:18</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>6</td><td>group-4</td><td class='num'>1.01&times;</td><td class='num'>163.202 s</td><td><code>08907658</code></td><td>2026-11-17 01:28</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>7</td><td>group-3</td><td class='num'>1.01&times;</td><td class='num'>163.667 s</td><td><code>a41e9711</code></td><td>2026-11-17 01:19</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>8</td><td>group-12</td><td class='num'>1.01&times;</td><td class='num'>163.594 s</td><td><code>b90be65d</code></td><td>2026-11-18 01:35</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>9</td><td>group-18</td><td class='num'>1.01&times;</td><td class='num'>164.590 s</td><td><code>e1fe86bd</code></td><td>2026-11-20 00:08</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>10</td><td>group-22</td><td class='num'>1.01&times;</td><td class='num'>163.143 s</td><td><code>09dc35f8</code></td><td>2026-11-24 01:26</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>11</td><td>group-20</td><td class='num'>1.01&times;</td><td class='num'>164.865 s</td><td><code>bcb935f1</code></td><td>2026-11-20 00:17</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>12</td><td>group-17</td><td class='num'>1.00&times;</td><td class='num'>164.997 s</td><td><code>c2e98e55</code></td><td>2026-11-19 23:59</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>13</td><td>group-15</td><td class='num'>1.00&times;</td><td class='num'>165.392 s</td><td><code>757aaebf</code></td><td>2026-11-19 23:49</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>14</td><td>group-16</td><td class='num'>1.00&times;</td><td class='num'>165.652 s</td><td><code>d8619c8b</code></td><td>2026-11-19 23:59</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>15</td><td>group-19</td><td class='num'>1.00&times;</td><td class='num'>165.710 s</td><td><code>b6adc0d7</code></td><td>2026-11-20 00:10</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>16</td><td>group-23</td><td class='num'>1.00&times;</td><td class='num'>164.153 s</td><td><code>adb659aa</code></td><td>2026-11-24 01:26</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>17</td><td>group-2</td><td class='num'>1.00&times;</td><td class='num'>165.563 s</td><td><code>ed829818</code></td><td>2026-11-17 01:19</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>18</td><td>group-8</td><td class='num'>1.00&times;</td><td class='num'>165.073 s</td><td><code>3b9dd2dc</code></td><td>2026-11-18 01:26</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>19</td><td>group-25</td><td class='num'>1.00&times;</td><td class='num'>164.594 s</td><td><code>e77fdb84</code></td><td>2026-11-24 01:38</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>20</td><td>group-13</td><td class='num'>1.00&times;</td><td class='num'>165.223 s</td><td><code>838b891a</code></td><td>2026-11-18 01:36</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>21</td><td>Group 1</td><td class='num'>1.00&times;</td><td class='num'>164.864 s</td><td><code>a544eea2</code></td><td>2026-11-15 12:41</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>22</td><td>group-7</td><td class='num'>0.99&times;</td><td class='num'>165.661 s</td><td><code>dc62e199</code></td><td>2026-11-18 01:17</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>23</td><td>group-14</td><td class='num'>0.99&times;</td><td class='num'>165.860 s</td><td><code>3b8347f9</code></td><td>2026-11-18 01:45</td><td><span class='s-ok'>ok</span></td></tr>
 </tbody></table></div>
 <h2>Sparse solver <span class='note'>(spsolve)</span></h2>
-<p class='meta'>Baseline: 83.04 s, measured 2026-11-23 10:56.</p>
+<p class='meta'>Baseline: 77.73 s, measured 2026-11-24 01:31.</p>
 <div class='wrap'><table><thead><tr><th>Rank</th><th>Team</th><th>Speedup</th><th>Time</th><th>Commit</th><th>Measured</th><th>Status</th></tr></thead><tbody>
-<tr><td class='num'>1</td><td>group-11</td><td class='num'>101.13&times;</td><td class='num'>0.821 s</td><td><code>5db3b92f</code></td><td>2026-11-23 10:56</td><td><span class='s-ok'>ok</span></td></tr>
+<tr><td class='num'>1</td><td>group-11</td><td class='num'>98.63&times;</td><td class='num'>0.788 s</td><td><code>ad8c45fe</code></td><td>2026-11-24 01:31</td><td><span class='s-ok'>ok</span></td></tr>
 <tr><td class='num'>2</td><td>Group 1</td><td class='num'>1.00&times;</td><td class='num'>77.824 s</td><td><code>a544eea2</code></td><td>2026-11-15 12:13</td><td><span class='s-ok'>ok</span></td></tr>
 </tbody></table></div>
 </main></body></html>
